@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Data files — contain real transaction data, never commit
+data/
+
+# macOS
+.DS_Store
+
+# Chainlit generated config
+.chainlit/
+
+# Excel temp files
+~$*.xlsx
+
+# Secrets
+.env
+*.env
