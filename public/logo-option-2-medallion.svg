@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="bgGrad2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2c2010"/>
+      <stop offset="100%" stop-color="#1a1410"/>
+    </radialGradient>
+    <linearGradient id="goldRing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8c060"/>
+      <stop offset="30%" stop-color="#c8902a"/>
+      <stop offset="60%" stop-color="#f0d070"/>
+      <stop offset="100%" stop-color="#8a6015"/>
+    </linearGradient>
+    <filter id="glow2">
+      <feGaussianBlur stdDeviation="1.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad2)" stroke="#3d2f1e" stroke-width="2"/>
+
+  <!-- Outer decorative ring -->
+  <circle cx="100" cy="100" r="82" fill="none" stroke="url(#goldRing)" stroke-width="2.5"/>
+
+  <!-- Tick marks around ring -->
+  <g stroke="#c8902a" stroke-width="1.2" opacity="0.7">
+    <line x1="100" y1="16" x2="100" y2="22"/>
+    <line x1="100" y1="178" x2="100" y2="184"/>
+    <line x1="16" y1="100" x2="22" y2="100"/>
+    <line x1="178" y1="100" x2="184" y2="100"/>
+    <!-- Diagonals -->
+    <line x1="42" y1="42" x2="46.5" y2="46.5"/>
+    <line x1="153.5" y1="153.5" x2="158" y2="158"/>
+    <line x1="158" y1="42" x2="153.5" y2="46.5"/>
+    <line x1="46.5" y1="153.5" x2="42" y2="158"/>
+  </g>
+
+  <!-- Inner ring -->
+  <circle cx="100" cy="100" r="70" fill="none" stroke="#3d2f1e" stroke-width="1"/>
+
+  <!-- Leaf / tobacco motif at top -->
+  <g transform="translate(100, 42)" filter="url(#glow2)">
+    <path d="M0,-10 C-8,-5 -10,5 0,10 C10,5 8,-5 0,-10 Z" fill="#c8902a" opacity="0.9"/>
+    <line x1="0" y1="-10" x2="0" y2="10" stroke="#8a6015" stroke-width="0.8"/>
+    <line x1="-5" y1="-2" x2="5" y2="-2" stroke="#8a6015" stroke-width="0.5"/>
+    <line x1="-6" y1="3" x2="6" y2="3" stroke="#8a6015" stroke-width="0.5"/>
+  </g>
+
+  <!-- Leaf / tobacco motif at bottom -->
+  <g transform="translate(100, 158) rotate(180)" filter="url(#glow2)">
+    <path d="M0,-10 C-8,-5 -10,5 0,10 C10,5 8,-5 0,-10 Z" fill="#c8902a" opacity="0.9"/>
+    <line x1="0" y1="-10" x2="0" y2="10" stroke="#8a6015" stroke-width="0.8"/>
+  </g>
+
+  <!-- Corner diamonds -->
+  <g fill="#c8902a" opacity="0.8">
+    <polygon points="100,22 103,25 100,28 97,25" />
+    <polygon points="100,172 103,175 100,178 97,175" />
+    <polygon points="22,100 25,103 28,100 25,97" />
+    <polygon points="172,100 175,103 178,100 175,97" />
+  </g>
+
+  <!-- Main text: SS monogram -->
+  <text x="100" y="88" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+        font-size="38" fill="#c8902a" font-weight="bold" filter="url(#glow2)" letter-spacing="-2">SS</text>
+
+  <!-- Thin rule under monogram -->
+  <line x1="72" y1="95" x2="128" y2="95" stroke="#c8902a" stroke-width="0.8" opacity="0.7"/>
+
+  <!-- Sub-brand text -->
+  <text x="100" y="112" text-anchor="middle" font-family="Georgia, serif"
+        font-size="9" fill="#f0e6d0" letter-spacing="4">SMOKE</text>
+  <text x="100" y="126" text-anchor="middle" font-family="Georgia, serif"
+        font-size="9" fill="#9e8060" letter-spacing="4">SHOPPE</text>
+
+  <!-- Bottom flourish text -->
+  <text x="100" y="148" text-anchor="middle" font-family="Georgia, serif"
+        font-size="6.5" fill="#9e8060" letter-spacing="2">EST. MMXXIV</text>
+</svg>

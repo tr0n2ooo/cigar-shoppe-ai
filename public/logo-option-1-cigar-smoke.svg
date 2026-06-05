@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2c2010"/>
+      <stop offset="100%" stop-color="#1a1410"/>
+    </radialGradient>
+    <linearGradient id="cigarGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8a5a14"/>
+      <stop offset="15%" stop-color="#c8902a"/>
+      <stop offset="85%" stop-color="#a07020"/>
+      <stop offset="100%" stop-color="#e8c060"/>
+    </linearGradient>
+    <linearGradient id="bandGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e8b040"/>
+      <stop offset="50%" stop-color="#c8902a"/>
+      <stop offset="100%" stop-color="#8a6015"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad)" stroke="#3d2f1e" stroke-width="2"/>
+
+  <!-- Smoke wisps -->
+  <g opacity="0.6" filter="url(#glow)">
+    <path d="M 82 58 Q 78 50 82 42 Q 86 34 80 28" fill="none" stroke="#9e8060" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M 90 55 Q 84 46 88 38 Q 92 30 86 22" fill="none" stroke="#9e8060" stroke-width="1.2" stroke-linecap="round"/>
+    <path d="M 98 52 Q 94 44 98 36 Q 102 28 96 20" fill="none" stroke="#9e8060" stroke-width="1" stroke-linecap="round"/>
+  </g>
+
+  <!-- Cigar body -->
+  <rect x="52" y="100" width="110" height="18" rx="9" fill="url(#cigarGrad)"/>
+
+  <!-- Cigar band -->
+  <rect x="112" y="100" width="22" height="18" fill="url(#bandGrad)"/>
+  <text x="123" y="113" text-anchor="middle" font-family="Georgia, serif" font-size="7" fill="#1a1410" font-weight="bold">SS</text>
+
+  <!-- Lit tip glow -->
+  <ellipse cx="56" cy="109" rx="6" ry="5" fill="#ff6600" opacity="0.8" filter="url(#glow)"/>
+  <ellipse cx="56" cy="109" rx="3" ry="2.5" fill="#ffcc00" opacity="0.9"/>
+
+  <!-- Cap end -->
+  <ellipse cx="162" cy="109" rx="4" ry="7" fill="#c8902a"/>
+
+  <!-- Brand text -->
+  <text x="100" y="148" text-anchor="middle" font-family="Georgia, serif" font-size="14" fill="#c8902a" font-weight="bold" letter-spacing="3">SMOKE</text>
+  <text x="100" y="165" text-anchor="middle" font-family="Georgia, serif" font-size="10" fill="#9e8060" letter-spacing="5">SHOPPE</text>
+
+  <!-- Decorative rule -->
+  <line x1="62" y1="135" x2="138" y2="135" stroke="#3d2f1e" stroke-width="1"/>
+</svg>

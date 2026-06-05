@@ -1,0 +1,265 @@
+/* ── Smoke Shoppe Theme ──────────────────────────────────────────────────── */
+/* Palette:
+   Background:   #1a1410  (deep tobacco brown-black)
+   Surface:      #241c15  (dark cedar)
+   Border:       #3d2f1e  (walnut)
+   Primary:      #c8902a  (aged amber/gold)
+   Primary dim:  #8a6015  (dark gold)
+   Text primary: #f0e6d0  (aged parchment)
+   Text muted:   #9e8060  (pale tobacco)
+*/
+
+/* ── Global background & typography ───────────────────────────────────────── */
+:root {
+  --cl-color-primary-50:  #fdf4e3;
+  --cl-color-primary-100: #f7e0ae;
+  --cl-color-primary-200: #f0c96e;
+  --cl-color-primary-300: #e8b040;
+  --cl-color-primary-400: #d99a2a;
+  --cl-color-primary-500: #c8902a;
+  --cl-color-primary-600: #a87020;
+  --cl-color-primary-700: #8a5a14;
+  --cl-color-primary-800: #6b440f;
+  --cl-color-primary-900: #4d300a;
+}
+
+body,
+#root,
+.MuiBox-root {
+  background-color: #1a1410 !important;
+}
+
+/* ── Header / nav bar ─────────────────────────────────────────────────────── */
+header,
+[class*="header"],
+nav {
+  background-color: #1a1410 !important;
+  border-bottom: 1px solid #3d2f1e !important;
+}
+
+/* App title text */
+header a,
+[class*="AppBar"] a,
+[class*="watermark"] {
+  color: #c8902a !important;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+[class*="Drawer"],
+[class*="sidebar"],
+aside {
+  background-color: #1e1610 !important;
+  border-right: 1px solid #3d2f1e !important;
+}
+
+[class*="ThreadHistory"],
+[class*="threadHistory"] {
+  background-color: #1e1610 !important;
+}
+
+/* ── Chat area ────────────────────────────────────────────────────────────── */
+[class*="MessageList"],
+[class*="messageList"],
+main {
+  background-color: #1a1410 !important;
+}
+
+/* User message bubbles */
+[class*="UserMessage"],
+[class*="user-message"],
+[data-author="user"] [class*="bubble"] {
+  background-color: #2c2010 !important;
+  border: 1px solid #3d2f1e !important;
+  color: #f0e6d0 !important;
+  border-radius: 12px !important;
+}
+
+/* Assistant message bubbles */
+[class*="AssistantMessage"] [class*="bubble"],
+[class*="assistant-message"] [class*="bubble"],
+[data-author="assistant"] [class*="bubble"] {
+  background-color: #241c15 !important;
+  border: 1px solid #3d2f1e !important;
+  color: #f0e6d0 !important;
+  border-radius: 12px !important;
+}
+
+/* Message text */
+[class*="Message"] p,
+[class*="Message"] li,
+[class*="Message"] span,
+[class*="Message"] td,
+[class*="Message"] th {
+  color: #f0e6d0 !important;
+}
+
+/* Inline code */
+[class*="Message"] code {
+  background-color: #2c2010 !important;
+  color: #e8b040 !important;
+  border: 1px solid #3d2f1e !important;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Code blocks */
+[class*="Message"] pre {
+  background-color: #110e0a !important;
+  border: 1px solid #3d2f1e !important;
+  border-radius: 8px !important;
+}
+
+[class*="Message"] pre code {
+  background-color: transparent !important;
+  border: none !important;
+  color: #d4c090 !important;
+}
+
+/* Markdown table */
+[class*="Message"] table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+}
+
+[class*="Message"] th {
+  background-color: #2c2010 !important;
+  border: 1px solid #3d2f1e !important;
+  color: #c8902a !important;
+  font-weight: 600 !important;
+}
+
+[class*="Message"] td {
+  border: 1px solid #3d2f1e !important;
+}
+
+[class*="Message"] tr:nth-child(even) td {
+  background-color: #1e1610 !important;
+}
+
+/* ── Composer (input area) ────────────────────────────────────────────────── */
+[class*="Composer"],
+[class*="composer"],
+[class*="InputBox"],
+[class*="inputBox"] {
+  background-color: #1e1610 !important;
+  border: 1px solid #3d2f1e !important;
+  border-radius: 12px !important;
+}
+
+[class*="Composer"] textarea,
+[class*="composer"] textarea,
+textarea {
+  background-color: transparent !important;
+  color: #f0e6d0 !important;
+  caret-color: #c8902a !important;
+}
+
+textarea::placeholder {
+  color: #9e8060 !important;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+button[class*="submit"],
+button[type="submit"],
+[class*="SendButton"],
+[class*="sendButton"] {
+  background-color: #c8902a !important;
+  color: #1a1410 !important;
+  border-radius: 8px !important;
+}
+
+button[class*="submit"]:hover,
+[class*="SendButton"]:hover {
+  background-color: #e8b040 !important;
+}
+
+/* Generic MUI outlined/contained primary buttons */
+.MuiButton-containedPrimary {
+  background-color: #c8902a !important;
+  color: #1a1410 !important;
+}
+
+.MuiButton-containedPrimary:hover {
+  background-color: #d99a2a !important;
+}
+
+/* Icon buttons (action icons in toolbar) */
+.MuiIconButton-root {
+  color: #9e8060 !important;
+}
+
+.MuiIconButton-root:hover {
+  color: #c8902a !important;
+  background-color: rgba(200, 144, 42, 0.1) !important;
+}
+
+/* ── Chips / tags ─────────────────────────────────────────────────────────── */
+.MuiChip-root {
+  background-color: #2c2010 !important;
+  border-color: #3d2f1e !important;
+  color: #c8902a !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1410;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3d2f1e;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #c8902a;
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+a {
+  color: #c8902a !important;
+}
+
+a:hover {
+  color: #e8b040 !important;
+}
+
+/* ── Welcome / step elements ──────────────────────────────────────────────── */
+[class*="WelcomeScreen"],
+[class*="welcomeScreen"],
+[class*="Step"],
+[class*="step"] {
+  background-color: #241c15 !important;
+  border: 1px solid #3d2f1e !important;
+  border-radius: 12px !important;
+  color: #f0e6d0 !important;
+}
+
+/* Starter prompts */
+[class*="Starter"],
+[class*="starter"] {
+  background-color: #241c15 !important;
+  border: 1px solid #3d2f1e !important;
+  color: #c8902a !important;
+  border-radius: 8px !important;
+}
+
+[class*="Starter"]:hover,
+[class*="starter"]:hover {
+  border-color: #c8902a !important;
+  background-color: #2c2010 !important;
+}
+
+/* ── Dividers & misc ──────────────────────────────────────────────────────── */
+.MuiDivider-root {
+  border-color: #3d2f1e !important;
+}
+
+[class*="watermark"],
+[class*="Watermark"] {
+  opacity: 0.4 !important;
+}

@@ -1,14 +1,10 @@
-# Welcome to Chainlit! 🚀🤖
+# Smoke Shoppe — Sales Analyst
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+Welcome. Ask anything about your sales data in plain English — I'll look it up and return specific numbers, trends, and insights.
 
-## Useful Links 🔗
-
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
-
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
-
-## Welcome screen
-
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+**Try asking:**
+- *What are the top 10 cigars by revenue this year?*
+- *How did last month's sales compare to the same month last year?*
+- *Which employee processed the most transactions?*
+- *What percentage of sales were paid by credit card vs. cash?*
+- *Show me a breakdown of sales by brand.*

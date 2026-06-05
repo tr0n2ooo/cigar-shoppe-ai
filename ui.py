@@ -18,8 +18,8 @@ async def on_chat_start():
     await cl.Message(
         content=(
             "# Smoke Shoppe Data Analyst\n\n"
-            "Ask questions about the transactions data in plain English. "
-            "I'll query the spreadsheet and answer with specific numbers.\n\n"
+            "Ask questions about your sales data in plain English. "
+            "I'll look it up and answer with specific numbers.\n\n"
             "**Try asking:**\n"
             "- *What are the top 5 products by total sales?*\n"
             "- *How many transactions were there in 2024?*\n"
