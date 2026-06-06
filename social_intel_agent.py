@@ -37,7 +37,7 @@ import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,7 @@ from cigar_researcher import _create_with_backoff, _apply_sales_filter
 DATA_DIR       = Path(__file__).parent / "data"
 SOCIAL_FILE    = DATA_DIR / "Cigar_Social.xlsx"
 BUZZ_FILE      = DATA_DIR / "Cigar_Buzz.xlsx"
-INVENTORY_FILE = DATA_DIR / "Smoke_Shoppe_Inventory.xlsx"
+INVENTORY_FILE = DATA_DIR / "Smoke_Shoppe_Inventory_Verified.xlsx"
 RESEARCH_FILE  = DATA_DIR / "Cigar_Research.xlsx"   # for MSRP cross-reference
 
 # ── XLSX schemas ──────────────────────────────────────────────────────────────
@@ -805,34 +805,71 @@ class SocialIntelAgent:
     def refresh_buzz_feed(
         self,
         max_searches: int = BUZZ_MAX_SEARCHES,
-        target_count: int = 15,
+        target_count: int = 25,
         fit_profile: str | None = DEFAULT_FIT_PROFILE,
         craziness: int = 5,
+        since_months: int = 3,
     ) -> list[dict[str, Any]]:
         """
         Run a Claude web search pass to find new/upcoming cigars generating buzz.
         Upserts results into Cigar_Buzz.xlsx.
 
         max_searches  — cap on web_search calls (default: BUZZ_MAX_SEARCHES).
-        target_count  — how many buzz cigars to request (default: 15).
+        target_count  — how many NEW (uncached) buzz cigars to find (default: 15).
         fit_profile   — store profile text used to compute fit_score per cigar.
                         Defaults to DEFAULT_FIT_PROFILE. Pass None to skip fit scoring.
         craziness     — 0-10 scale controlling fit vs. buzz tradeoff in ranking.
                         0 = safe/high-fit only. 10 = pure buzz, ignore fit.
+        since_months  — only find cigars announced/released within the last N months.
+                        Default 3. Pass 0 to disable the date filter.
         """
         craziness = max(0, min(10, craziness))
+
+        # ── date cutoff ───────────────────────────────────────────────────────
+        if since_months > 0:
+            since_date = date.today() - timedelta(days=since_months * 30)
+            since_str  = since_date.strftime("%B %-d, %Y")   # e.g. "March 7, 2026"
+            date_instruction = (
+                f"DATE FILTER: Only include cigars that were first announced or released "
+                f"on or after {since_str} (last {since_months} months). "
+                f"Do NOT include anything announced before that date.\n"
+            )
+        else:
+            since_str = None
+            date_instruction = ""
+
+        # ── skip already-cached cigars ────────────────────────────────────────
+        existing = self.load_buzz_cache()
+        cached_names = sorted(
+            f"{v.get('Name', '')} ({v.get('Brand', '')})"
+            for v in existing.values()
+            if v.get("Name")
+        )
+        if cached_names:
+            skip_section = (
+                "ALREADY IN DATABASE — do not include any of these, "
+                "even if they were announced recently:\n"
+                + "\n".join(f"  - {n}" for n in cached_names)
+                + "\n"
+            )
+        else:
+            skip_section = ""
+
         logging.info(
-            "Refreshing buzz feed (max_searches=%d, target=%d, craziness=%d)…",
+            "Refreshing buzz feed (max_searches=%d, target=%d, craziness=%d, since=%s, skip=%d cached)…",
             max_searches, target_count, craziness,
+            since_str or "no date filter", len(cached_names),
         )
 
-        # Optionally enrich with recent Reddit new-release posts
-        reddit_posts, reddit_warning = reddit_search(
-            "new release 2025 2026", time_filter="year"
+        # ── Reddit enrichment (scoped to the same window) ─────────────────────
+        reddit_query = (
+            f"new cigar release {since_date.year}" if since_months > 0
+            else "new cigar release 2025 2026"
         )
+        reddit_posts, reddit_warning = reddit_search(reddit_query, time_filter="month")
         reddit_block = reddit_format(reddit_posts, reddit_warning)
 
-        # Build fit profile section
+        # ── fit profile section ───────────────────────────────────────────────
         if fit_profile:
             fit_section = (
                 f"\n--- STORE FIT PROFILE ---\n{fit_profile}\n\n"
@@ -842,11 +879,13 @@ class SocialIntelAgent:
             fit_section = "\nNo fit profile provided — set fit_score and fit_notes to null for all items.\n"
 
         user_message = (
-            "Find the most talked-about NEW and UPCOMING premium cigars released or announced "
-            "in 2025 or 2026. Focus on RECENT releases — do not include anything from 2024 or earlier.\n\n"
+            f"Find {target_count} NEW premium cigars that are generating online buzz and that "
+            f"are NOT yet in our database.\n\n"
+            f"{date_instruction}"
+            f"{skip_section}\n"
             f"--- Recent Reddit r/cigars posts about new releases ---\n{reddit_block}\n"
             f"{fit_section}\n"
-            "Now search the web for new releases, PCA 2025/2026 announcements, Halfwheel coverage, "
+            "Search the web for new releases, PCA announcements, Halfwheel coverage, "
             f"and other buzz signals. Score each cigar against the fit profile above. "
             f"Return a JSON array of exactly {target_count} items "
             f"(you have {max_searches} web searches — use them efficiently). "
@@ -939,12 +978,19 @@ class SocialIntelAgent:
                         (or all-time if since is None).
         exclude_brands – brands to skip entirely (default: house brand).
         """
-        inv = pd.read_excel(INVENTORY_FILE, header=1)
+        from tools.inventory_tool import run_inventory_sql_df
+        conditions = []
         if category:
-            inv = inv[inv["Category"] == category]
-
+            conditions.append(f"Category = '{category}'")
         if exclude_brands:
-            inv = inv[~inv["Brand"].isin(exclude_brands)]
+            brands_sql = ", ".join(f"'{b.replace(chr(39), chr(39)*2)}'" for b in exclude_brands)
+            conditions.append(f"Brand NOT IN ({brands_sql})")
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        inv = run_inventory_sql_df(
+            f'SELECT "Item Number", Description, Brand, "Parent Company" '
+            f"FROM inventory {where}",
+            file_path=str(INVENTORY_FILE),
+        )
 
         if since or sort_by_sales:
             inv = _apply_sales_filter(inv, since=since, sort_by_sales=sort_by_sales)
@@ -1036,18 +1082,20 @@ def get_all_social() -> list[dict]:
 def get_buzz_feed(
     refresh: bool = False,
     max_searches: int = BUZZ_MAX_SEARCHES,
-    target_count: int = 15,
+    target_count: int = 25,
     fit_profile: str | None = DEFAULT_FIT_PROFILE,
     craziness: int = 5,
+    since_months: int = 3,
 ) -> list[dict]:
     """
     Return the current buzz feed (Cigar_Buzz.xlsx).
     If refresh=True, runs a new web search pass first.
 
     max_searches  — web search cap for the refresh pass (default: BUZZ_MAX_SEARCHES).
-    target_count  — number of buzz cigars to request from Claude (default: 15).
+    target_count  — number of NEW (uncached) buzz cigars to find (default: 15).
     fit_profile   — store profile used to score fit. Defaults to DEFAULT_FIT_PROFILE.
     craziness     — 0-10: 0=safe/high-fit, 10=pure buzz. Default: 5 (balanced).
+    since_months  — only find cigars from the last N months (default 3, used when refresh=True).
     """
     agent = _get_agent()
     if refresh:
@@ -1056,15 +1104,19 @@ def get_buzz_feed(
             target_count=target_count,
             fit_profile=fit_profile,
             craziness=craziness,
+            since_months=since_months,
         )
     return list(agent.load_buzz_cache().values())
 
 
 def social_status() -> dict:
     """Return coverage summary for both caches."""
+    from tools.inventory_tool import run_inventory_sql
     agent = _get_agent()
-    inv = pd.read_excel(INVENTORY_FILE, header=1)
-    cigars = inv[inv["Category"] == "Cigars"]
+    total_cigars = run_inventory_sql(
+        "SELECT COUNT(*) FROM inventory WHERE Category = 'Cigars'",
+        file_path=str(INVENTORY_FILE),
+    )[0][0]
     social_cache = agent.load_social_cache()
     buzz_cache   = agent.load_buzz_cache()
 
@@ -1072,9 +1124,9 @@ def social_status() -> dict:
     from tools.youtube_tool import is_available as youtube_ok, availability_note as youtube_note
 
     return {
-        "total_cigar_skus":     len(cigars),
+        "total_cigar_skus":     total_cigars,
         "social_researched":    len(social_cache),
-        "social_remaining":     max(0, len(cigars) - len(social_cache)),
+        "social_remaining":     max(0, total_cigars - len(social_cache)),
         "buzz_items":           len(buzz_cache),
         "reddit_configured":    reddit_ok(),
         "reddit_note":          reddit_note() or "OK",
@@ -1107,8 +1159,11 @@ if __name__ == "__main__":
                         help=f"Cap on web searches per agent call. "
                              f"Buzz default: {BUZZ_MAX_SEARCHES}, reputation default: {REPUTATION_MAX_SEARCHES}. "
                              f"Lower = cheaper/faster, higher = more thorough.")
-    parser.add_argument("--target",       type=int,   default=15,
-                        help="Number of buzz cigars to request from Claude (default: 15, used with --buzz)")
+    parser.add_argument("--target",        type=int,   default=25,
+                        help="Number of NEW (uncached) buzz cigars to find (default: 15, used with --buzz)")
+    parser.add_argument("--since-months", type=int,   default=3,
+                        help="Only find cigars announced/released in the last N months (default: 3). "
+                             "Pass 0 to disable the date filter. Used with --buzz.")
     parser.add_argument("--craziness",    type=int,   default=5,
                         help="0-10 scale: 0=safe/high-fit only, 10=pure buzz ignore fit. Default: 5 (balanced).")
     parser.add_argument("--no-fit",       action="store_true",
@@ -1128,18 +1183,21 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.buzz:
-        max_s      = args.max_searches if args.max_searches is not None else BUZZ_MAX_SEARCHES
-        fit_prof   = None if args.no_fit else DEFAULT_FIT_PROFILE
-        craziness  = max(0, min(10, args.craziness))
+        max_s         = args.max_searches if args.max_searches is not None else BUZZ_MAX_SEARCHES
+        fit_prof      = None if args.no_fit else DEFAULT_FIT_PROFILE
+        craziness     = max(0, min(10, args.craziness))
+        since_months  = max(0, args.since_months)
         items = get_buzz_feed(
             refresh=True,
             max_searches=max_s,
             target_count=args.target,
             fit_profile=fit_prof,
             craziness=craziness,
+            since_months=since_months,
         )
-        fit_label = f"  craziness={craziness}" if fit_prof else "  (no fit scoring)"
-        print(f"\nBuzz feed refreshed — {len(items)} items  (≤{max_s} searches{fit_label})")
+        fit_label    = f"  craziness={craziness}" if fit_prof else "  (no fit scoring)"
+        since_label  = f"  last {since_months}mo" if since_months > 0 else "  (no date filter)"
+        print(f"\nBuzz feed refreshed — {len(items)} total items in cache  (≤{max_s} searches{fit_label}{since_label})")
         print(f"{'Buzz':>4}  {'Fit':>4}  {'Sentiment':<10}  Name (Brand)")
         print("─" * 70)
         for item in sorted(items, key=lambda x: -(x.get("Buzz Score") or 0))[:15]:

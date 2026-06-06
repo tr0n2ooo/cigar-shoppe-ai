@@ -1,28 +1,30 @@
 """
-server.py
----------
-FastMCP server that exposes the Smoke Shoppe XLSX analyst as MCP tools,
+sales_server.py
+---------------
+FastMCP server that exposes the Smoke Shoppe sales analyst as MCP tools,
 enabling other agents in a multi-agent system to call it over stdio or HTTP/SSE.
 
 Stdio transport (works with Claude Desktop, CrewAI, LangChain, etc.):
-    python server.py
-    python server.py --file /path/to/other.xlsx
+    python sales_server.py
+    python sales_server.py --file /path/to/other.xlsx
 
 SSE/HTTP transport (for remote agents or orchestrators):
-    python server.py --transport sse --port 8000
+    python sales_server.py --transport sse --port 8000
 
 Exposed MCP tools:
-  • query_xlsx   – natural-language Q&A via the agent (uses LLM)
-  • describe_xlsx – sheet names + column headers, no LLM call
+  • query_xlsx          – natural-language Q&A via the agent (uses LLM)
+  • describe_xlsx       – sheet names + column headers, no LLM call
+  • analyze_fit_profile – score a candidate cigar against the store's sales profile
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from agent import DEFAULT_XLSX, run_query
+from sales_agent import DEFAULT_XLSX, run_query, analyze_sales_fit
 from tools.sql_tool import SqlQueryTool
 
 
@@ -61,6 +63,37 @@ def build_server(xlsx_path: str) -> FastMCP:
     )
     def describe_xlsx() -> str:
         return sql_tool._run(action="get_schema")
+
+    @mcp.tool(
+        name="analyze_fit_profile",
+        description=(
+            "Score a candidate cigar against Smoke Shoppe's historical sales profile. "
+            "Returns an overall_fit_score (0-100) plus per-dimension scores for wrapper, "
+            "strength, vitola, price, and brand. Also returns comparable top sellers from "
+            "transactions data and flags inaccessible brands (Davidoff, OpusX, etc.). "
+            "Use this to evaluate how well a new cigar would sell before ordering it. "
+            "Parameters: description (product name), brand, wrapper (e.g. 'Maduro'), "
+            "strength (e.g. 'Medium-Full'), vitola (e.g. 'Toro'), msrp (price per stick)."
+        ),
+    )
+    def analyze_fit_profile_tool(
+        description: str,
+        brand: str = "",
+        wrapper: str = "",
+        strength: str = "",
+        vitola: str = "",
+        msrp: float | None = None,
+    ) -> str:
+        result = analyze_sales_fit(
+            description=description,
+            brand=brand,
+            wrapper=wrapper,
+            strength=strength,
+            vitola=vitola,
+            msrp=msrp,
+            xlsx_path=xlsx_path,
+        )
+        return json.dumps(result, default=str, indent=2)
 
     return mcp
 

@@ -10,7 +10,7 @@ Run:
 
 import chainlit as cl
 
-from agent import DEFAULT_XLSX, run_query
+from sales_agent import DEFAULT_XLSX, run_query
 
 
 @cl.on_chat_start

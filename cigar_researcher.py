@@ -47,7 +47,7 @@ import pandas as pd
 # ── paths ────────────────────────────────────────────────────────────────────
 DATA_DIR       = Path(__file__).parent / "data"
 RESEARCH_FILE  = DATA_DIR / "Cigar_Research.xlsx"
-INVENTORY_FILE = DATA_DIR / "Smoke_Shoppe_Inventory.xlsx"
+INVENTORY_FILE = DATA_DIR / "Smoke_Shoppe_Inventory_Verified.xlsx"
 
 # ── Line-key deduplication ────────────────────────────────────────────────────
 # Words that appear at the end of a description to denote size/shape but are NOT
@@ -671,13 +671,19 @@ class CigarResearcher:
                         in the `since` window, or all-time if since is None).
         exclude_brands – brands to skip entirely (default: house brand).
         """
-        inv = pd.read_excel(INVENTORY_FILE, header=1)
+        from tools.inventory_tool import run_inventory_sql_df
+        conditions = []
         if category:
-            inv = inv[inv["Category"] == category]
-
-        # ── Always exclude house brand(s) ─────────────────────────────────────
+            conditions.append(f"Category = '{category}'")
         if exclude_brands:
-            inv = inv[~inv["Brand"].isin(exclude_brands)]
+            brands_sql = ", ".join(f"'{b.replace(chr(39), chr(39)*2)}'" for b in exclude_brands)
+            conditions.append(f"Brand NOT IN ({brands_sql})")
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        inv = run_inventory_sql_df(
+            f'SELECT "Item Number", Description, Brand, "Parent Company", UPC '
+            f"FROM inventory {where}",
+            file_path=str(INVENTORY_FILE),
+        )
 
         # ── Sales filter / sort ───────────────────────────────────────────────
         if since or sort_by_sales:
@@ -790,13 +796,16 @@ def get_all_research() -> list[dict]:
 
 def research_status() -> dict:
     """Return a summary: how many items are cached vs. total inventory."""
-    inv   = pd.read_excel(INVENTORY_FILE, header=1)
-    cigars = inv[inv["Category"] == "Cigars"]
+    from tools.inventory_tool import run_inventory_sql
+    total = run_inventory_sql(
+        "SELECT COUNT(*) FROM inventory WHERE Category = 'Cigars'",
+        file_path=str(INVENTORY_FILE),
+    )[0][0]
     cache  = get_researcher().load_cache()
     return {
-        "total_cigar_skus": len(cigars),
+        "total_cigar_skus": total,
         "researched":       len(cache),
-        "remaining":        max(0, len(cigars) - len(cache)),
+        "remaining":        max(0, total - len(cache)),
         "research_file":    str(RESEARCH_FILE),
     }
 
@@ -894,42 +903,56 @@ def _apply_sales_filter(
 
     Adds columns: _units_sold, _revenue, _balanced_score (if sort_by_sales).
     """
-    txn = pd.read_excel(
-        DATA_DIR / "Smoke_Shoppe_Transactions.xlsx",
-        header=0,
-        usecols=["Date", "Item Number", "Quantity", "Item Amount"],
-    )
-    txn["Date"] = pd.to_datetime(txn["Date"], format="%m/%d/%y", errors="coerce")
+    import duckdb
+    # Register the passed-in inventory slice and query transactions via DuckDB.
+    # Only the three columns we need are pulled from transactions.
+    conn = duckdb.connect()
+    conn.register("inv", inv)
 
+    date_filter = ""
     if since:
         start, end = _parse_since(since)
-        txn = txn[(txn["Date"] >= start) & (txn["Date"] <= end)]
-        if txn.empty:
-            print(f"  ⚠ No transactions found for '{since}' — proceeding without filter.")
+        date_filter = f"AND CAST(t.Date AS VARCHAR) >= '{start}' AND CAST(t.Date AS VARCHAR) <= '{end}'"
 
-    sales = (
-        txn.groupby("Item Number", as_index=False)
-        .agg(_units_sold=("Quantity", "sum"), _revenue=("Item Amount", "sum"))
-    )
+    tx_path = str(DATA_DIR / "Smoke_Shoppe_Transactions.xlsx")
+    # Load only the columns we need from transactions
+    import pandas as _pd
+    txn = _pd.read_excel(tx_path, header=0,
+                         usecols=["Date", "Item Number", "Quantity", "Item Amount"])
+    txn["Date"] = _pd.to_datetime(txn["Date"], format="%m/%d/%y", errors="coerce")
+    conn.register("transactions", txn)
 
-    inv = inv.copy()
-    inv["Item Number"] = inv["Item Number"].astype(str)
-    sales["Item Number"] = sales["Item Number"].astype(str)
+    join_type = "INNER" if since else "LEFT"
+    date_clause = ""
+    if since:
+        start, end = _parse_since(since)
+        date_clause = f"AND t.Date >= '{start}' AND t.Date <= '{end}'"
 
-    join_how = "inner" if since else "left"
-    merged = inv.merge(sales, on="Item Number", how=join_how)
-    merged["_units_sold"] = merged["_units_sold"].fillna(0)
-    merged["_revenue"]    = merged["_revenue"].fillna(0)
+    result = conn.execute(f"""
+        SELECT
+            inv.*,
+            COALESCE(SUM(t.Quantity), 0)      AS _units_sold,
+            COALESCE(SUM(t."Item Amount"), 0) AS _revenue
+        FROM inv
+        {join_type} JOIN transactions t
+            ON CAST(inv."Item Number" AS VARCHAR) = CAST(t."Item Number" AS VARCHAR)
+            {date_clause}
+        GROUP BY ALL
+        ORDER BY inv.rowid
+    """).fetchdf()
+
+    if result.empty and since:
+        print(f"  ⚠ No transactions found for '{since}' — proceeding without filter.")
 
     if sort_by_sales:
-        total_qty = merged["_units_sold"].sum()
-        total_rev = merged["_revenue"].sum()
-        qty_share = merged["_units_sold"] / total_qty if total_qty > 0 else 0.0
-        rev_share = merged["_revenue"]    / total_rev if total_rev > 0 else 0.0
-        merged["_balanced_score"] = (qty_share + rev_share) / 2
-        merged = merged.sort_values("_balanced_score", ascending=False)
+        total_qty = result["_units_sold"].sum()
+        total_rev = result["_revenue"].sum()
+        qty_share = result["_units_sold"] / total_qty if total_qty > 0 else 0.0
+        rev_share = result["_revenue"]    / total_rev if total_rev > 0 else 0.0
+        result["_balanced_score"] = (qty_share + rev_share) / 2
+        result = result.sort_values("_balanced_score", ascending=False)
 
-    return merged.reset_index(drop=True)
+    return result.reset_index(drop=True)
 
 
 def _cache_key(description: str, brand: str) -> str:

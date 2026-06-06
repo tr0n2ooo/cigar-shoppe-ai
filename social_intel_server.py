@@ -81,7 +81,7 @@ def build_server() -> FastMCP:
             "Return new and upcoming cigars generating social buzz, scored for fit with this store. "
             "Each item includes: buzz_score (0-100), fit_score (0-100, how well it matches our customers), "
             "fit_notes (quick fit summary), release status, sentiment, and a 1-2 sentence summary. "
-            "Set refresh=True to trigger a fresh web search pass. "
+            "Set refresh=True to trigger a fresh web search pass (finds up to 25 new items by default). "
             f"max_searches: 3-4=quick/cheap, {BUZZ_MAX_SEARCHES}=default thorough sweep. "
             "craziness 0-10: 0=safe/high-fit only, 10=pure buzz ignore fit (default 5=balanced). "
             "fit_profile: override the store profile text (default uses Smoke Shoppe sales data). "
@@ -92,8 +92,9 @@ def build_server() -> FastMCP:
     def get_buzz_feed_tool(
         refresh: bool = False,
         max_searches: int = BUZZ_MAX_SEARCHES,
-        target_count: int = 15,
+        target_count: int = 25,
         craziness: int = 5,
+        since_months: int = 3,
         fit_profile: str = DEFAULT_FIT_PROFILE,
     ) -> str:
         items = get_buzz_feed(
@@ -102,6 +103,7 @@ def build_server() -> FastMCP:
             target_count=target_count,
             fit_profile=fit_profile or None,
             craziness=craziness,
+            since_months=since_months,
         )
         # Sort: balanced score of buzz + fit weighted by craziness level
         def sort_key(item):

@@ -20,6 +20,21 @@ main.py — convenience launcher
   python main.py social --batch --limit 20  → batch, first 20 uncached items only
   python main.py social --buzz         → refresh Cigar_Buzz.xlsx (new/upcoming cigars)
   python main.py social --status       → show cache and API configuration status
+
+  python main.py order-server          → start the ordering agent MCP server (stdio, port 8003)
+  python main.py order-server --transport sse --port 8003
+  python main.py order                 → run Tree of Thought order recommendation (cached buzz feed)
+  python main.py order --refresh       → refresh buzz feed then run ordering analysis
+  python main.py order --slots 5       → recommend 5 new SKUs (default 3)
+  python main.py order --craziness 7   → more adventurous branching (default 5)
+  python main.py order                 → uses $1,000 default order budget
+  python main.py order --budget 500    → total order budget ($500 wholesale)
+  python main.py order --max-price 22 → filter out cigars above $22/stick
+  python main.py order --json          → output raw JSON
+
+  python main.py verify-inventory      → build Smoke_Shoppe_Inventory_Verified.xlsx
+                                         (zeros items never in sales + clamps negatives)
+  python main.py verify-inventory --summary   → print stats only, no file written
 """
 
 import sys
@@ -42,11 +57,11 @@ def main():
         )
 
     elif cmd == "server":
-        from server import main as server_main
+        from sales_server import main as server_main
         server_main()
 
     elif cmd == "query":
-        from agent import run_query
+        from sales_agent import run_query
         question = " ".join(rest) if rest else "Summarise the contents of this file."
         print(run_query(question))
 
@@ -72,6 +87,20 @@ def main():
         _sys.argv = [_sys.argv[0]] + rest
         import runpy
         runpy.run_module("social_intel_agent", run_name="__main__", alter_sys=True)
+
+    elif cmd == "order-server":
+        from ordering_server import main as order_server_main
+        order_server_main()
+
+    elif cmd == "order":
+        import sys as _sys
+        _sys.argv = [_sys.argv[0]] + rest
+        import runpy
+        runpy.run_module("ordering_agent", run_name="__main__", alter_sys=True)
+
+    elif cmd == "verify-inventory":
+        from inventory_verifier import main as verify_main
+        verify_main()
 
     else:
         print(f"Unknown command: {cmd!r}")
