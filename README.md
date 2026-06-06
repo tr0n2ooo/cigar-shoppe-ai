@@ -119,6 +119,9 @@ python main.py research-server --transport sse --port 8001  # MCP server (HTTP/S
 python main.py research "Perdomo BBA Mad. Churchill" "Perdomo"  # research one cigar
 python main.py research --batch                  # populate Cigar_Research.xlsx for all inventory
 python main.py research --batch --limit 20       # first 20 uncached items only
+python main.py research --batch --force          # re-research even if already cached
+python main.py research --batch --since "last 6 months"        # only cigars sold recently
+python main.py research --batch --since "last 6 months" --top  # highest balanced qty+revenue first
 python main.py research --status                 # show cache coverage
 
 # ── Social intelligence agent ────────────────────────────────────────────────
@@ -127,7 +130,15 @@ python main.py social-server --transport sse --port 8002  # MCP server (HTTP/SSE
 python main.py social "Perdomo BBA Mad. Churchill" "Perdomo"  # reputation for one cigar
 python main.py social --batch                    # populate Cigar_Social.xlsx for all inventory
 python main.py social --batch --limit 20         # first 20 uncached items only
+python main.py social --batch --force            # re-research even if already cached
+python main.py social --batch --since "last 6 months"        # only cigars sold recently
+python main.py social --batch --since "last 6 months" --top  # highest balanced qty+revenue first
 python main.py social --buzz                     # refresh Cigar_Buzz.xlsx (new/upcoming cigars)
+python main.py social --buzz --max-searches 4    # quick/cheap sweep (fewer API calls)
+python main.py social --buzz --target 20         # request 20 buzz cigars instead of 15
+python main.py social --buzz --craziness 0       # safe mode: high-fit cigars only
+python main.py social --buzz --craziness 10      # wild mode: pure buzz, ignore store fit
+python main.py social --buzz --no-fit            # skip fit scoring entirely (faster)
 python main.py social --status                   # show cache coverage + API config
 ```
 
