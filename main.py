@@ -12,6 +12,14 @@ main.py — convenience launcher
   python main.py research --batch      → populate Cigar_Research.xlsx for all inventory
   python main.py research --batch --limit 20  → batch, first 20 uncached items only
   python main.py research --status     → show research cache coverage
+
+  python main.py social-server         → start the social intel MCP server (stdio, port 8002)
+  python main.py social-server --transport sse --port 8002
+  python main.py social "Perdomo BBA Mad. Churchill" "Perdomo"  → research one cigar's reputation
+  python main.py social --batch        → populate Cigar_Social.xlsx for all inventory
+  python main.py social --batch --limit 20  → batch, first 20 uncached items only
+  python main.py social --buzz         → refresh Cigar_Buzz.xlsx (new/upcoming cigars)
+  python main.py social --status       → show cache and API configuration status
 """
 
 import sys
@@ -54,6 +62,16 @@ def main():
         cigar_researcher  # triggers __main__ block via runpy
         import runpy
         runpy.run_module("cigar_researcher", run_name="__main__", alter_sys=True)
+
+    elif cmd == "social-server":
+        from social_intel_server import main as social_server_main
+        social_server_main()
+
+    elif cmd == "social":
+        import sys as _sys
+        _sys.argv = [_sys.argv[0]] + rest
+        import runpy
+        runpy.run_module("social_intel_agent", run_name="__main__", alter_sys=True)
 
     else:
         print(f"Unknown command: {cmd!r}")

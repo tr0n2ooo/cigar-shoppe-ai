@@ -489,8 +489,13 @@ class CigarResearcher:
                         break
                 break
 
-            if response.stop_reason == "tool_use":
-                continue  # Anthropic handles search server-side; keep looping
+            if response.stop_reason in ("tool_use", "max_tokens"):
+                # API requires user/assistant alternation. Add a continuation
+                # user turn to avoid "assistant prefill" error on next call.
+                messages.append({"role": "user", "content": "Continue and provide the final JSON result."})
+                continue
+
+            break  # unexpected stop reason
 
         source_urls = raw_json.get("source_urls", [])
         if isinstance(source_urls, list):
@@ -601,8 +606,13 @@ class CigarResearcher:
             # Native web_search tool: Anthropic executes the search server-side.
             # The tool_result is already included in response.content — we just
             # need to keep looping until end_turn.
-            if response.stop_reason == "tool_use":
+            # The API requires user/assistant alternation — add a continuation
+            # user turn to avoid "assistant prefill" error on the next call.
+            if response.stop_reason in ("tool_use", "max_tokens"):
+                messages.append({"role": "user", "content": "Continue and provide the final JSON result."})
                 continue
+
+            break  # unexpected stop reason
 
         # Map agent keys → COLUMN names
         source_urls = raw_json.get("source_urls", [])
@@ -696,8 +706,14 @@ class CigarResearcher:
                 skipped += 1
                 continue
 
-            units = row.get("_units_sold", "")
-            units_str = f"  {int(units)} units sold" if units != "" else ""
+            units   = row.get("_units_sold", "")
+            revenue = row.get("_revenue", "")
+            if units != "" and revenue != "":
+                units_str = f"  {int(units)} units / ${revenue:,.0f} rev"
+            elif units != "":
+                units_str = f"  {int(units)} units sold"
+            else:
+                units_str = ""
             try:
                 result = self.research_cigar(description, brand, item_number, parent_company, upc=upc, search_id=search_id)
                 results.append(result)
@@ -721,43 +737,8 @@ class CigarResearcher:
         since: str | None,
         sort_by_sales: bool,
     ) -> "pd.DataFrame":
-        """
-        Join inventory with transactions to get units sold, optionally
-        restricted to a date window, and sort descending if requested.
-        Items with no sales in the window are dropped when `since` is set;
-        when only `sort_by_sales` is True, unsold items appear at the end.
-        """
-        txn = pd.read_excel(
-            Path(__file__).parent / "data" / "Smoke_Shoppe_Transactions.xlsx",
-            header=0,
-            usecols=["Date", "Item Number", "Quantity"],
-        )
-        txn["Date"] = pd.to_datetime(txn["Date"], format="%m/%d/%y", errors="coerce")
-
-        if since:
-            start, end = _parse_since(since)
-            txn = txn[(txn["Date"] >= start) & (txn["Date"] <= end)]
-            if txn.empty:
-                print(f"  ⚠ No transactions found for '{since}' — proceeding without filter.")
-
-        sales = (
-            txn.groupby("Item Number", as_index=False)["Quantity"]
-            .sum()
-            .rename(columns={"Quantity": "_units_sold"})
-        )
-
-        # Normalise Item Number dtype for join
-        inv = inv.copy()
-        inv["Item Number"] = inv["Item Number"].astype(str)
-        sales["Item Number"] = sales["Item Number"].astype(str)
-
-        merged = inv.merge(sales, on="Item Number", how="left" if not since else "inner")
-        merged["_units_sold"] = merged["_units_sold"].fillna(0)
-
-        if sort_by_sales:
-            merged = merged.sort_values("_units_sold", ascending=False)
-
-        return merged.reset_index(drop=True)
+        """Thin wrapper — see module-level _apply_sales_filter for full docs."""
+        return _apply_sales_filter(inv, since, sort_by_sales)
 
 
 # ── public lookup (used by sales agent & MCP server) ─────────────────────────
@@ -893,6 +874,64 @@ def _parse_since(since: str) -> tuple["pd.Timestamp", "pd.Timestamp"]:
     )
 
 
+def _apply_sales_filter(
+    inv: "pd.DataFrame",
+    since: str | None,
+    sort_by_sales: bool,
+) -> "pd.DataFrame":
+    """
+    Join inventory with transactions to get units sold and revenue,
+    optionally restricted to a date window, and sort by balanced
+    qty+revenue score (descending) if sort_by_sales is True.
+
+    Balanced sort: equal weight between a cigar's share of total units
+    sold and its share of total revenue.  This prevents cheap high-volume
+    items from dominating over more valuable lines.
+
+    When ``since`` is set, items with zero sales in that window are
+    excluded (inner join).  When only ``sort_by_sales`` is True, unsold
+    items appear at the bottom (left join, score 0).
+
+    Adds columns: _units_sold, _revenue, _balanced_score (if sort_by_sales).
+    """
+    txn = pd.read_excel(
+        DATA_DIR / "Smoke_Shoppe_Transactions.xlsx",
+        header=0,
+        usecols=["Date", "Item Number", "Quantity", "Item Amount"],
+    )
+    txn["Date"] = pd.to_datetime(txn["Date"], format="%m/%d/%y", errors="coerce")
+
+    if since:
+        start, end = _parse_since(since)
+        txn = txn[(txn["Date"] >= start) & (txn["Date"] <= end)]
+        if txn.empty:
+            print(f"  ⚠ No transactions found for '{since}' — proceeding without filter.")
+
+    sales = (
+        txn.groupby("Item Number", as_index=False)
+        .agg(_units_sold=("Quantity", "sum"), _revenue=("Item Amount", "sum"))
+    )
+
+    inv = inv.copy()
+    inv["Item Number"] = inv["Item Number"].astype(str)
+    sales["Item Number"] = sales["Item Number"].astype(str)
+
+    join_how = "inner" if since else "left"
+    merged = inv.merge(sales, on="Item Number", how=join_how)
+    merged["_units_sold"] = merged["_units_sold"].fillna(0)
+    merged["_revenue"]    = merged["_revenue"].fillna(0)
+
+    if sort_by_sales:
+        total_qty = merged["_units_sold"].sum()
+        total_rev = merged["_revenue"].sum()
+        qty_share = merged["_units_sold"] / total_qty if total_qty > 0 else 0.0
+        rev_share = merged["_revenue"]    / total_rev if total_rev > 0 else 0.0
+        merged["_balanced_score"] = (qty_share + rev_share) / 2
+        merged = merged.sort_values("_balanced_score", ascending=False)
+
+    return merged.reset_index(drop=True)
+
+
 def _cache_key(description: str, brand: str) -> str:
     return f"{str(description).strip().lower()}|{str(brand).strip().lower()}"
 
@@ -913,7 +952,7 @@ if __name__ == "__main__":
                         help="Only research cigars sold within this window. "
                              "Examples: '2025', 'last 6 months', 'last 90 days', 'Q2 2024', '2024-01 to 2024-06'")
     parser.add_argument("--top",         action="store_true",
-                        help="Sort by most units sold (descending) within the --since window, or all-time if omitted")
+                        help="Sort by balanced qty+revenue score (descending) within --since window, or all-time if omitted")
     parser.add_argument("--status",      action="store_true",       help="Show cache status and exit")
     parser.add_argument("--test-search", action="store_true",       help="Run a quick live search test and exit")
     args = parser.parse_args()
