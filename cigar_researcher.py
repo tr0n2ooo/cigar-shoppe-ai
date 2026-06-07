@@ -33,6 +33,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import date
 from pathlib import Path
@@ -219,12 +220,36 @@ TOOL_DEF = {
 }
 
 
+# ── Rate-limit callback (per-thread) ─────────────────────────────────────────
+# Allows the UI layer to be notified when a rate-limit wait starts without
+# threading the callback through every call site.  Set once per worker thread
+# via set_rate_limit_cb() before any tool work begins.
+
+_tl = threading.local()
+
+
+def set_rate_limit_cb(fn) -> None:
+    """Register a callable(wait_secs, attempt) for the current thread."""
+    _tl.rate_limit_cb = fn
+
+
+def _fire_rate_limit_cb(wait: int, attempt: int) -> None:
+    fn = getattr(_tl, "rate_limit_cb", None)
+    if fn:
+        try:
+            fn(wait, attempt)
+        except Exception:
+            pass
+
+
 # ── Rate-limit-aware API call ─────────────────────────────────────────────────
 
 def _create_with_backoff(client: anthropic.Anthropic, **kwargs) -> anthropic.types.Message:
     """
     Call client.messages.create with exponential backoff on rate-limit (429) errors.
     Waits 60 s on the first hit, doubling each retry up to 4 attempts.
+    Fires the per-thread rate-limit callback (if set) before each sleep so the
+    UI can warn the user.
     """
     wait = 60
     for attempt in range(4):
@@ -237,6 +262,7 @@ def _create_with_backoff(client: anthropic.Anthropic, **kwargs) -> anthropic.typ
                 "Rate limit hit — waiting %d s before retry %d/3  (%s)",
                 wait, attempt + 1, exc,
             )
+            _fire_rate_limit_cb(wait, attempt + 1)
             print(f"  ⏳ Rate limit — waiting {wait}s…", flush=True)
             time.sleep(wait)
             wait = min(wait * 2, 300)  # cap at 5 min

@@ -111,8 +111,9 @@ async def on_message(message: cl.Message):
     event_queue: asyncio.Queue = asyncio.Queue()
 
     # ── event types ──────────────────────────────────────────────────────────
-    # ("start", tool_name)
-    # ("end",   tool_name, output_snippet)
+    # ("start",      tool_name)
+    # ("end",        tool_name, output_snippet)
+    # ("rate_limit", wait_secs, attempt)
     # (None,)  — sentinel: stop the updater
 
     # ── async UI updater ─────────────────────────────────────────────────────
@@ -141,14 +142,30 @@ async def on_message(message: cl.Message):
                     step.output = snippet
                     await step.update()
 
+            elif event[0] == "rate_limit":
+                _, wait_secs, attempt = event
+                step = cl.Step(
+                    name=f"⏳ API rate limit — retrying in {wait_secs}s (attempt {attempt}/3)",
+                    type="tool",
+                )
+                step.output = (
+                    "Anthropic's API is temporarily rate-limiting requests. "
+                    f"Waiting {wait_secs} seconds before retry {attempt} of 3 — "
+                    "the response will arrive, just a bit later than usual. ☕"
+                )
+                await step.send()
+                await step.update()
+
     # ── thread-safe callbacks (called from worker thread) ────────────────────
     def on_tool_start(tool_name: str, _inputs: dict) -> None:
         loop.call_soon_threadsafe(event_queue.put_nowait, ("start", tool_name))
 
     def on_tool_end(tool_name: str, output: str) -> None:
-        # Pass a short snippet so the completed step shows something useful
         snippet = (output[:300] + "…") if len(output) > 300 else output
         loop.call_soon_threadsafe(event_queue.put_nowait, ("end", tool_name, snippet))
+
+    def on_rate_limit(wait_secs: int, attempt: int) -> None:
+        loop.call_soon_threadsafe(event_queue.put_nowait, ("rate_limit", wait_secs, attempt))
 
     # ── kick off both tasks ───────────────────────────────────────────────────
     updater_task = asyncio.create_task(ui_updater())
@@ -158,6 +175,7 @@ async def on_message(message: cl.Message):
             message.content,
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
+            on_rate_limit=on_rate_limit,
         )
     except Exception as exc:
         answer = f"**Error:** {exc}"

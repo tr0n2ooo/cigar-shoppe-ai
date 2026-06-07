@@ -26,7 +26,7 @@ from typing import Any
 
 import anthropic
 
-from cigar_researcher import _create_with_backoff
+from cigar_researcher import _create_with_backoff, set_rate_limit_cb
 
 # ── tool discovery ────────────────────────────────────────────────────────────
 
@@ -189,6 +189,7 @@ def run_dispatch(
     *,
     on_tool_start: Any = None,
     on_tool_end: Any = None,
+    on_rate_limit: Any = None,
 ) -> str:
     """
     Dispatch a natural-language question to the appropriate specialist tools
@@ -213,8 +214,17 @@ def run_dispatch(
     tools = get_tools()
     messages: list[dict] = [{"role": "user", "content": question}]
 
+    # Register the rate-limit callback on the dispatch thread (covers the
+    # dispatcher's own Claude calls) and on every tool-worker thread below.
+    if on_rate_limit:
+        set_rate_limit_cb(on_rate_limit)
+
     def _execute_block(block) -> tuple[str, str]:
         """Run a single tool_use block and return (tool_use_id, output)."""
+        # Each worker thread needs its own registration since threading.local
+        # is per-thread.
+        if on_rate_limit:
+            set_rate_limit_cb(on_rate_limit)
         if on_tool_start:
             on_tool_start(block.name, block.input)
         output = _run_tool(block.name, block.input)
