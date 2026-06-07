@@ -965,8 +965,8 @@ class SocialIntelAgent:
         category: str = "Cigars",
         since: str | None = None,
         sort_by_sales: bool = False,
-        exclude_brands: tuple[str, ...] = ("Smoke Shoppe", "Signature"),
-        exclude_parent_companies: tuple[str, ...] = ("Smoke Shoppe",),
+        exclude_brands: tuple[str, ...] = ("Smoke Shoppe",),
+        exclude_parent_companies: tuple[str, ...] = (),
     ) -> list[dict]:
         """
         Batch-research inventory cigars, optionally filtered and sorted by sales.

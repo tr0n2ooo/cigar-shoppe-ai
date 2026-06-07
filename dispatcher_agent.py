@@ -37,8 +37,11 @@ _SKIP_MODULES = {"dispatcher_agent"}
 
 # House brands — made in-house by Smoke Shoppe, no external research exists for them.
 # The dispatcher skips lookup_cigar and lookup_social_reputation for these.
-HOUSE_PARENT_COMPANIES = {"smoke shoppe"}
-HOUSE_BRANDS = {"smoke shoppe", "signature"}
+# Only Brand = "Smoke Shoppe" (the SS Conn. line) qualifies.
+# "Signature House Blend" (Brand = "Signature") is NOT a house blend — treat it
+# like any other third-party cigar and look it up normally.
+HOUSE_BRANDS = {"smoke shoppe"}
+HOUSE_PARENT_COMPANIES: set[str] = set()  # parent-company check not needed; brand is specific enough
 
 # Cached discovery result — loaded once per process
 _tools_cache: list[dict] | None = None
@@ -124,12 +127,16 @@ You have access to specialist tools that cover the full range of shop operations
 ## Routing guidelines
 
 **Cigar profile questions** ("Tell me about X", "What can you tell me about X?", "What's in X?"):
-First check if the cigar is a Smoke Shoppe house brand (brands: "Smoke Shoppe", "Signature";
-parent company: "Smoke Shoppe"). Use search_inventory_by_name to check.
+First check if the cigar is a Smoke Shoppe house blend (Brand = "Smoke Shoppe" in inventory —
+the "SS Conn." line). Use search_inventory_by_name to check.
 
-- If it IS a house brand: call only search_inventory_by_name and query_xlsx for sales history.
-  Do NOT call lookup_cigar or lookup_social_reputation — no external research exists for
-  house-made cigars. Note in your response that this is a Smoke Shoppe house blend.
+NOTE: "Signature House Blend" (Brand = "Signature") is NOT the house blend — treat it like
+any other third-party cigar and look it up via lookup_cigar and lookup_social_reputation.
+
+- If it IS the house blend (Brand = "Smoke Shoppe"): call only search_inventory_by_name and
+  query_xlsx for sales history. Do NOT call lookup_cigar or lookup_social_reputation — no
+  external research exists for in-house blends. Note in your response that this is the
+  Smoke Shoppe house blend.
 - If it is NOT a house brand: call ALL three in sequence:
   1. lookup_cigar (blend, strength, flavor notes, MSRP, critical rating)
   2. lookup_social_reputation (pro scores, community sentiment, overall score)
