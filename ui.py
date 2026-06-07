@@ -12,9 +12,21 @@ Run:
     chainlit run ui.py --port 8080
 """
 
+import os
+
 import chainlit as cl
 
 from dispatcher_agent import run_dispatch
+
+
+@cl.password_auth_callback
+def auth_callback(username: str, password: str) -> cl.User | None:
+    """Return a User if credentials match, None to reject."""
+    expected_user = os.environ.get("UI_USERNAME", "admin")
+    expected_pass = os.environ.get("UI_PASSWORD", "")
+    if username == expected_user and password == expected_pass:
+        return cl.User(identifier=username)
+    return None
 
 # Override labels for tools that benefit from a friendlier or more informative status message.
 # Any tool not listed here gets a formatted fallback: "lookup_cigar" → "Running lookup cigar…"

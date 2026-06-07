@@ -1,0 +1,32 @@
+# Virtual environment — rebuilt inside the image
+.venv/
+
+# Data files — mounted as a volume at runtime
+data/
+
+# Git internals
+.git/
+.gitignore
+
+# macOS noise
+.DS_Store
+**/.DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[oc]
+
+# Secrets — injected at runtime via env_file
+.env
+*.env
+
+# Dev / build artifacts
+*.egg-info/
+dist/
+build/
+
+# Docker artifacts
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.tar.gz

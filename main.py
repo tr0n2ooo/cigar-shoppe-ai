@@ -65,9 +65,17 @@ def main():
 
     if cmd == "ui":
         import subprocess, sys as _sys
+        # Default to 0.0.0.0 so the reverse proxy can reach us.
+        # Override with --host or --port in `rest` if needed.
+        base_args = ["--host", "0.0.0.0", "--port", "8000"]
+        # Let explicit flags in `rest` win over the defaults
+        if "--host" in rest:
+            base_args = [a for a in base_args if a not in ("--host", "0.0.0.0")]
+        if "--port" in rest:
+            base_args = [a for a in base_args if a not in ("--port", "8000")]
         raise SystemExit(
             subprocess.call(
-                [_sys.executable, "-m", "chainlit", "run", "ui.py"] + rest
+                [_sys.executable, "-m", "chainlit", "run", "ui.py"] + base_args + rest
             )
         )
 

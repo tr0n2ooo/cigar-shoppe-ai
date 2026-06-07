@@ -1,0 +1,20 @@
+services:
+  cigar-shoppe:
+    image: cigar-shoppe-ai:0.7
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # XLSX data files — copy these to the Synology before first launch.
+      # On Synology, create a shared folder (e.g. /volume1/docker/cigar-shoppe/data/)
+      # and copy all files from your local data/ directory into it.
+      - ./data:/app/data
+    env_file:
+      # Create this file on the Synology alongside docker-compose.yml (see below).
+      - .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
