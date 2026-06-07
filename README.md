@@ -322,9 +322,8 @@ The inventory agent maintains `Discontinued` and `Discontinued Reason` columns i
 ├── inventory_agent.py         # Inventory analysis agent + CLI (no LLM required)
 ├── inventory_server.py        # FastMCP server — inventory agent as MCP tools (port 8004)
 ├── inventory_verifier.py      # Builds Smoke_Shoppe_Inventory_Verified.xlsx
-├── chainlit.md                # Chatbot welcome screen (fallback)
-├── .chainlit/translations/
-│   └── en-US.md               # Locale-specific welcome screen
+├── chainlit.md                # Chatbot welcome screen (fallback for unknown locales)
+├── chainlit_en-US.md          # English welcome screen (loaded by Chainlit for en-US browsers)
 ├── tools/
 │   ├── sql_tool.py            # SqlQueryTool — loads transactions XLSX into DuckDB, runs SQL
 │   ├── inventory_tool.py      # DuckDB-backed inventory + transaction access helpers

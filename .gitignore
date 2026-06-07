@@ -15,11 +15,8 @@ data/
 # macOS
 .DS_Store
 
-# Chainlit — ignore generated internals but track project config and translations
+# Chainlit generated config
 .chainlit/
-!.chainlit/config.toml
-!.chainlit/translations/
-!.chainlit/translations/**
 
 # Excel temp files
 ~$*.xlsx
