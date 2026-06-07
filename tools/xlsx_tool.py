@@ -1,7 +1,7 @@
 """
 tools/xlsx_tool.py
 ------------------
-A CrewAI BaseTool that reads and queries an XLSX file from the local filesystem.
+Reads and queries an XLSX file from the local filesystem.
 Exposes four actions:
   - list_sheets   : return all sheet names
   - describe_sheet: return column headers and row count for a sheet
@@ -11,51 +11,34 @@ Exposes four actions:
 
 import json
 from pathlib import Path
-from typing import Optional, Type
+from typing import Optional
 
 import openpyxl
-from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
 
 
-class XlsxToolInput(BaseModel):
-    action: str = Field(
-        description=(
-            "What to do. One of: "
-            "'list_sheets' – list all sheet names; "
-            "'describe_sheet' – return column headers and row count; "
-            "'read_sheet' – read rows from a sheet; "
-            "'query_data' – search rows containing a keyword."
-        )
-    )
-    sheet_name: Optional[str] = Field(
-        default=None,
-        description="Name of the sheet to operate on. Defaults to the first sheet.",
-    )
-    keyword: Optional[str] = Field(
-        default=None,
-        description="Keyword to search for (used by 'query_data').",
-    )
-    max_rows: Optional[int] = Field(
-        default=100,
-        description="Maximum rows to return (used by 'read_sheet' and 'query_data').",
-    )
+class XlsxReaderTool:
+    """Read and query an Excel (.xlsx) file."""
 
-
-class XlsxReaderTool(BaseTool):
-    name: str = "xlsx_reader"
-    description: str = (
+    name = "xlsx_reader"
+    description = (
         "Read and query an Excel (.xlsx) file. "
-        "Use 'list_sheets' to discover sheet names, "
-        "'describe_sheet' to see headers and row count, "
-        "'read_sheet' to retrieve rows, and "
-        "'query_data' to search for specific values."
+        "Use action='list_sheets' to discover sheet names, "
+        "action='describe_sheet' to see headers and row count, "
+        "action='read_sheet' to retrieve rows, and "
+        "action='query_data' to search for specific values."
     )
-    args_schema: Type[BaseModel] = XlsxToolInput
-    file_path: str = Field(description="Absolute path to the .xlsx file.")
 
-    def __init__(self, file_path: str, **kwargs):
-        super().__init__(file_path=str(Path(file_path).resolve()), **kwargs)
+    def __init__(self, file_path: str):
+        self.file_path = str(Path(file_path).resolve())
+
+    def run(
+        self,
+        action: str,
+        sheet_name: Optional[str] = None,
+        keyword: Optional[str] = None,
+        max_rows: int = 100,
+    ) -> str:
+        return self._run(action, sheet_name, keyword, max_rows)
 
     def _load_workbook(self) -> openpyxl.Workbook:
         path = Path(self.file_path)

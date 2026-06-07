@@ -973,6 +973,8 @@ def _resolve_items(query: str, df: "pd.DataFrame") -> "pd.Series":
     Per-term resolution order:
       1. Exact item-number match
       2. Case-insensitive substring match on Description
+      3. Case-insensitive substring match on Brand
+      4. Case-insensitive substring match on Parent Company
 
     Leading "All " is stripped from each term — it's a user intent signal
     but all matches are always returned regardless.
@@ -989,11 +991,21 @@ def _resolve_items(query: str, df: "pd.DataFrame") -> "pd.Series":
     unmatched: list[str] = []
 
     for term in terms:
+        term_lower = term.lower()
+        escaped    = re.escape(term_lower)
+
+        # 1. Exact item-number match
         mask = df["Item Number"].astype(str).str.strip() == term
+        # 2. Substring on Description
         if not mask.any():
-            mask = df["Description"].astype(str).str.lower().str.contains(
-                re.escape(term.lower()), na=False
-            )
+            mask = df["Description"].astype(str).str.lower().str.contains(escaped, na=False)
+        # 3. Substring on Brand (catches "Alec Bradley", "Oliva", etc.)
+        if not mask.any() and "Brand" in df.columns:
+            mask = df["Brand"].astype(str).str.lower().str.contains(escaped, na=False)
+        # 4. Substring on Parent Company
+        if not mask.any() and "Parent Company" in df.columns:
+            mask = df["Parent Company"].astype(str).str.lower().str.contains(escaped, na=False)
+
         if mask.any():
             combined |= mask
         else:

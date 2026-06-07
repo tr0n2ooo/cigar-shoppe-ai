@@ -23,14 +23,17 @@ main.py — convenience launcher
 
   python main.py order-server          → start the ordering agent MCP server (stdio, port 8003)
   python main.py order-server --transport sse --port 8003
-  python main.py order                 → run Tree of Thought order recommendation (cached buzz feed)
-  python main.py order --refresh       → refresh buzz feed then run ordering analysis
-  python main.py order --slots 5       → recommend 5 new SKUs (default 3)
-  python main.py order --craziness 7   → more adventurous branching (default 5)
-  python main.py order                 → uses $1,000 default order budget
-  python main.py order --budget 500    → total order budget ($500 wholesale)
-  python main.py order --max-price 22 → filter out cigars above $22/stick
-  python main.py order --json          → output raw JSON
+  python main.py order                         → 30-day horizon, $5,000 budget, 10% new cigars
+  python main.py order --horizon 7             → 7-day horizon (~$1,167 default budget)
+  python main.py order --horizon 90            → 90-day horizon (~$15,000 default budget)
+  python main.py order --budget 3000           → explicit $3,000 budget
+  python main.py order --new-cigar-pct 20      → 20% of budget for new cigars, 80% restock
+  python main.py order --new-cigar-budget 500  → $500 for new cigars, rest for restock
+  python main.py order --refresh               → refresh buzz feed then run ordering analysis
+  python main.py order --slots 5               → recommend 5 new SKUs (default 3)
+  python main.py order --craziness 7           → more adventurous branching (default 5)
+  python main.py order --max-price 22          → filter out cigars above $22/stick
+  python main.py order --json                  → output raw JSON
 
   python main.py inventory-server      → start the inventory agent MCP server (stdio, port 8004)
   python main.py inventory-server --transport sse --port 8004

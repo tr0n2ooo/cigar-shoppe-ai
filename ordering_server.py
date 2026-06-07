@@ -24,7 +24,7 @@ import sys
 
 from mcp.server.fastmcp import FastMCP
 
-from ordering_agent import generate_order_recommendation, BUZZ_STALE_MONTHS
+from ordering_agent import generate_order_recommendation, BUZZ_STALE_MONTHS, DEFAULT_MONTHLY_BUDGET
 from sales_agent import analyze_sales_fit, DEFAULT_XLSX
 
 
@@ -43,33 +43,38 @@ def build_server() -> FastMCP:
         name="generate_order_recommendation",
         description=(
             "Evaluate candidate cigars using Tree of Thought reasoning and recommend which ones to order. "
-            "Runs three evaluation branches (conservative/balanced/adventurous) then synthesizes them "
-            "into a final ranked recommendation with conviction levels, vitolas, box quantities, "
-            "and estimated wholesale costs (50% of MSRP).\n\n"
+            "Also fetches low-stock reorder signals from the inventory agent and incorporates them into "
+            "the order plan. When the restock budget cannot cover all flagged items, Claude prioritizes "
+            "them by urgency, velocity, and profit with per-item reasoning.\n\n"
             "Parameters:\n"
-            "  refresh_buzz: bool — force a buzz feed refresh (costs web searches, default False).\n"
-            "    The feed is also auto-refreshed when the cache is older than stale_months.\n"
-            "  stale_months: int — auto-refresh if cache is older than N months (default 3; 0=disable)\n"
+            "  horizon_days: int — planning horizon in days (default 30). Controls:\n"
+            "    • default budget: $5,000 × (horizon_days / 30), so 7 days ≈ $1,167, 90 days = $15,000\n"
+            "    • stockout-risk window: only items likely to run out within horizon_days are flagged\n"
+            "  order_budget: float — total $ wholesale budget. Defaults to $5,000 × (horizon_days/30).\n"
+            "  new_cigar_pct: float 0-100 — % of budget for new cigar recommendations (default 10).\n"
+            "    Remainder goes to restocking low-stock items. When the restock share cannot cover all\n"
+            "    flagged items, Claude selects the highest-value subset and explains each decision.\n"
+            "    Set to 0 for restock-only, 100 for new-cigars-only.\n"
+            "  refresh_buzz: bool — force a buzz feed refresh (default False).\n"
+            "    The feed is also auto-refreshed when older than stale_months.\n"
+            "  stale_months: int — auto-refresh buzz cache if older than N months (default 3; 0=disable)\n"
             "  slots: int — number of new SKUs to recommend (default 3)\n"
-            "  craziness: int 0-10 — controls branch spread:\n"
-            "    0-2 = all branches stay conservative (high fit required)\n"
-            "    3-5 = balanced spread (default: 5)\n"
-            "    6-8 = adventurous spread (buzz drives recommendations)\n"
-            "    9-10 = wild (pure buzz, ignore fit)\n"
-            "  order_budget: float — total $ to spend on this order (wholesale = 50% of MSRP);\n"
-            "    synthesis will trim box quantities or drop items to stay within budget\n"
+            "  craziness: int 0-10 — controls ToT branch spread:\n"
+            "    0-2 = conservative  |  3-5 = balanced (default 5)  |  6-10 = adventurous\n"
             "  max_price_per_stick: float — pre-filter: exclude candidates above this MSRP/stick\n\n"
-            "Returns: branches (3 independent evaluations) + recommendation (synthesis with vitolas,\n"
-            "  box sizes, cost breakdown, total_order_cost) + metadata"
+            "Returns: branches + recommendation (new cigars, with vitolas/box sizes/costs) + "
+            "restock (prioritized low-stock items with reasoning) + budget_warnings + metadata"
         ),
     )
     def generate_order_recommendation_tool(
+        horizon_days: int = 30,
+        order_budget: float | None = None,
+        new_cigar_pct: float = 10,
         refresh_buzz: bool = False,
         stale_months: int = BUZZ_STALE_MONTHS,
         slots: int = 3,
         candidate_pool: int = 25,
         craziness: int = 5,
-        order_budget: float | None = None,
         max_price_per_stick: float | None = None,
     ) -> str:
         result = generate_order_recommendation(
@@ -79,6 +84,8 @@ def build_server() -> FastMCP:
             candidate_pool=candidate_pool,
             craziness=max(0, min(10, craziness)),
             order_budget=order_budget,
+            new_cigar_pct=new_cigar_pct,
+            horizon_days=horizon_days,
             max_price_per_stick=max_price_per_stick,
         )
         return json.dumps(result, default=str, indent=2)
