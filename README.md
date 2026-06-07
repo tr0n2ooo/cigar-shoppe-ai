@@ -44,9 +44,14 @@ Claude web search (native)        Optional enrichment
                                   Tree of Thought ordering analysis
                                   (conservative / balanced / adventurous)
                                            │
-                                  Smoke_Shoppe_Inventory_Verified.xlsx
-                                  (verified inventory — never passed whole
-                                   to LLM context, DuckDB only)
+                                  ┌────────┴────────────────┐
+                                  ▼                         ▼
+                         Cigar_Buzz.xlsx          inventory_agent.py
+                         (new SKU candidates)     analyze_reorder()
+                                                  (low-stock reorder signals)
+                                                           │
+                                                  Smoke_Shoppe_Inventory_Verified.xlsx
+                                                  (DuckDB — inventory + transactions)
 
 inventory_agent.py      — inventory analysis agent (SQL + DuckDB, no LLM required)
         │
@@ -58,13 +63,14 @@ run_shop_sql_df()                  Smoke_Shoppe_Inventory_Verified.xlsx
 ```
 
 **Key design decisions:**
-- **Anthropic SDK directly** for all agent loops — avoids CrewAI assistant prefill issues
+- **Anthropic SDK directly** for all agent loops — no third-party agent framework
 - **Claude native web search** (`web_search_20250305`) for all research — no Brave/Serp keys needed
 - **DuckDB** for all data access — agents write SQL; only result rows enter context, never full DataFrames
 - **Chainlit** for the web UI — themed with the Smoke Shoppe brand (dark amber/gold palette)
 - **Four XLSX caches** — `Cigar_Research.xlsx` (blend/MSRP), `Cigar_Social.xlsx` (reputation), `Cigar_Buzz.xlsx` (buzz feed), `Smoke_Shoppe_Inventory_Verified.xlsx` (verified inventory)
 - **Graceful degradation** — Reddit and YouTube are optional enrichment; all agents work without them
 - **Tree of Thought ordering** — three independent branches (conservative/balanced/adventurous) synthesized into a final recommendation with vitola, box quantity, and wholesale cost estimates
+- **Integrated restock + new-cigar ordering** — every order run also pulls low-stock reorder signals and allocates budget across restocking and new SKUs, with Claude-powered prioritization when the restock budget is constrained
 - **Transaction-based inventory analytics** — all YTD/MTD figures come from `Smoke_Shoppe_Transactions.xlsx`, never from the inventory file's POS-exported columns
 
 ---
@@ -78,7 +84,7 @@ All data files live in `data/`:
 | `Smoke_Shoppe_Transactions.xlsx` | 124,256 sales rows, 20 columns (2023–2026) |
 | `Smoke_Shoppe_Inventory.xlsx` | 3,713 inventory items, 37 columns (source of truth) |
 | `Smoke_Shoppe_Inventory_Verified.xlsx` | Verified copy: items never in transactions zeroed; negatives clamped; `Discontinued` + `Discontinued Reason` columns added and maintained by the inventory agent. |
-| `Brand_Reference.xlsx` | 248-row brand → parent company lookup |
+| `Brand_Reference.xlsx` | 248-row brand → parent company lookup (used for order grouping) |
 | `Cigar_Research.xlsx` | Per-SKU: wrapper, binder, filler, flavor notes, MSRP/MAP, ratings |
 | `Cigar_Social.xlsx` | Per-SKU: overall/quality/value/community scores, top quotes, sources |
 | `Cigar_Buzz.xlsx` | New/upcoming cigars: buzz score, sentiment, summary, release status |
@@ -90,8 +96,8 @@ All data files live in `data/`:
 ### 1. Install dependencies
 
 ```bash
-pip install -r requirements.txt
-# or: uv sync
+uv sync
+# or: pip install anthropic chainlit duckdb mcp openpyxl pandas
 ```
 
 ### 2. Set environment variables
@@ -175,17 +181,29 @@ python main.py social --status                   # show cache coverage + API con
 # ── Ordering agent ────────────────────────────────────────────────────────────
 python main.py order-server                              # MCP server (stdio)
 python main.py order-server --transport sse --port 8003  # MCP server (HTTP/SSE)
-python main.py order                             # recommend new SKUs to order (uses cached buzz feed,
-                                                 #   auto-refreshes if cache is older than 3 months)
-python main.py order --refresh                   # force buzz feed refresh before analyzing
-python main.py order --stale-months 1            # auto-refresh if cache is older than 1 month
-python main.py order --stale-months 0            # disable auto-refresh (always use cache as-is)
-python main.py order --slots 5                   # recommend 5 new SKUs (default 3)
-python main.py order --pool 30                   # consider top 30 buzz candidates (default 25)
-python main.py order --craziness 7               # more adventurous branching (default 5, range 0-10)
-python main.py order --budget 500                # total order budget in $ (default $1,000)
-python main.py order --max-price 22              # filter out cigars above $22/stick MSRP
-python main.py order --json                      # output raw JSON instead of pretty-print
+
+# Defaults: 30-day horizon, $5,000 budget, 10% new cigars / 90% restock
+python main.py order
+
+# Planning horizon — scales the default budget and stockout-risk window
+python main.py order --horizon 7               # 7-day horizon (~$1,167 budget)
+python main.py order --horizon 90              # 90-day horizon (~$15,000 budget)
+
+# Budget control
+python main.py order --budget 3000             # explicit $3,000 total budget
+python main.py order --new-cigar-pct 20        # 20% new cigars, 80% restock (default 10%)
+python main.py order --new-cigar-pct 0         # restock only — skip new-cigar analysis
+python main.py order --new-cigar-budget 500    # fixed $500 for new cigars; rest to restock
+
+# New cigar selection
+python main.py order --refresh                 # force buzz feed refresh before analyzing
+python main.py order --stale-months 1          # auto-refresh if cache is older than 1 month
+python main.py order --stale-months 0          # disable auto-refresh (always use cache as-is)
+python main.py order --slots 5                 # recommend 5 new SKUs (default 3)
+python main.py order --pool 30                 # consider top 30 buzz candidates (default 25)
+python main.py order --craziness 7             # more adventurous branching (default 5, range 0-10)
+python main.py order --max-price 22            # filter out cigars above $22/stick MSRP
+python main.py order --json                    # output raw JSON instead of pretty-print
 
 # ── Inventory agent ───────────────────────────────────────────────────────────
 python main.py inventory-server                              # MCP server (stdio)
@@ -220,9 +238,58 @@ python main.py verify-inventory --summary        # print stats only, no file wri
 
 ---
 
+## Ordering agent details
+
+Every order run covers two things at once: **restocking low-stock items** and **recommending new SKUs** to try. Budget is split between them.
+
+### Budget and horizon
+
+The default budget is **$5,000 × (horizon_days / 30)**, so a 7-day run defaults to ~$1,167 and a 90-day run to $15,000. Pass `--budget` to override.
+
+`--new-cigar-pct` (default 10) controls how the budget is divided:
+
+| Scenario | Budget split |
+|----------|-------------|
+| Default | 10% new cigars, 90% restock |
+| `--new-cigar-pct 0` | 100% restock, new-cigar analysis skipped |
+| `--new-cigar-pct 100` | 100% new cigars, restock signals still shown but not budgeted |
+| `--new-cigar-budget 500` | Fixed $500 for new cigars; remainder goes to restock |
+
+**Budget exhaustion guard:** if total restock demand meets or exceeds the full order budget (regardless of `--new-cigar-pct`), the entire budget is allocated to restock and the new-cigar Tree of Thought analysis is skipped. The output includes a clear warning explaining why.
+
+### Restock section
+
+At the start of every run, the ordering agent calls the inventory agent's `analyze_reorder()` to get all flagged low-stock items (OOS, below minimum, or projected stockout within the horizon window). It then:
+
+1. **Annotates costs** using actual `Cost` values from the inventory (not MSRP estimates)
+2. **Rounds up to whole boxes** using a brand-keyed lookup table (Padrón 26/25/10, Oliva 24, My Father 23, Arturo Fuente 25, etc.) so orders align to manufacturer minimums
+3. **Applies seasonality** — prior-year same-window sales are used to scale reorder quantities up or down (factor clamped to 0.4×–3.0× baseline velocity), so a summer cigar doesn't get over-ordered in February
+4. **Prioritizes when over budget** — if the restock budget can't cover all flagged items, Claude selects the highest-value subset with per-item include/exclude reasoning
+
+### New-cigar Tree of Thought
+
+1. Loads the buzz feed (`Cigar_Buzz.xlsx`) — new/upcoming cigars with social excitement scores
+2. Filters out any cigars already in stock (fuzzy-matched against `Smoke_Shoppe_Inventory_Verified.xlsx`)
+3. Enriches each candidate with a fit profile (wrapper, strength, vitola, price, brand — scored against proven sales patterns)
+4. Runs three independent evaluation branches:
+   - **Conservative** — proven fit required (fit 75%, buzz 25%)
+   - **Balanced** — equal weight to fit and social momentum (50/50)
+   - **Adventurous** — chases buzz; accepts profile mismatches (buzz 70%, fit 30%)
+5. Synthesizes branches into a final ranked recommendation with vitola, box quantity, and estimated wholesale cost (50% of MSRP)
+
+**Craziness (0–10):** at 5 (default), branches run at conservative=2, balanced=5, adventurous=8. At 0 all branches stay risk-averse; at 10 the adventurous branch goes pure buzz.
+
+**Recency weighting:** recently announced cigars receive a scoring bonus (≤14 days: +25pts, 15–45 days: +15pts, 46–90 days: +8pts, 91–180 days: +3pts).
+
+### Order grouped by parent company
+
+The output includes an `order_by_parent_company` section (and a matching CLI block) that combines both restock and new-cigar items under each vendor, sorted by total wholesale cost. Parent company is resolved from `Brand_Reference.xlsx`. This makes it straightforward to build one PO per vendor.
+
+---
+
 ## Inventory agent details
 
-The inventory agent (`inventory_agent.py`) answers five key stock-health questions entirely via SQL — no LLM is needed for the data layer. An optional `--summarize` flag adds a Claude interpretation.
+The inventory agent (`inventory_agent.py`) answers four key stock-health questions entirely via SQL — no LLM is needed for the data layer. An optional `--summarize` flag adds a Claude interpretation.
 
 **All YTD/MTD figures come from `Smoke_Shoppe_Transactions.xlsx`**, not from the inventory file's POS-exported columns. Items that never appear in the transaction file are excluded (verifier-zeroed). The catch-all "Open" entry is always excluded.
 
@@ -252,29 +319,7 @@ The inventory agent maintains `Discontinued` and `Discontinued Reason` columns i
 - Every `--low-stock` run automatically refreshes auto-discontinued flags first so the exclusion list is always current.
 - Manual `--mark-discontinued` reasons survive the auto-refresh.
 - `--re-enable` sets `No` and is only overridable by a new `--mark-discontinued`.
-- Natural-language queries accepted: `"All Magic Toast"`, `"Los Statos, Knuckle Sandwich"`, exact item numbers, or description substrings.
-
----
-
-## Ordering agent details
-
-The ordering agent uses **Tree of Thought** reasoning to recommend which new cigars to add to inventory.
-
-**How it works:**
-1. Loads the buzz feed (`Cigar_Buzz.xlsx`) — new/upcoming cigars with social excitement scores
-2. Filters out any cigars already in stock (fuzzy-matched against `Smoke_Shoppe_Inventory_Verified.xlsx`)
-3. Enriches each candidate with a fit profile (how well it matches the store's proven sales patterns)
-4. Runs three independent evaluation branches with different risk tolerances:
-   - **Conservative** — proven fit required (fit 75%, buzz 25%)
-   - **Balanced** — equal weight to fit and social momentum (50/50)
-   - **Adventurous** — chases buzz; accepts profile mismatches (buzz 70%, fit 30%)
-5. Synthesizes branches into a final ranked recommendation with vitola, box quantity, and estimated wholesale cost (50% of MSRP)
-
-**Craziness parameter (0–10):** controls how far the branches spread. At 5 (default), conservative branch runs at 2, balanced at 5, adventurous at 8. At 0, all branches stay risk-averse; at 10, the adventurous branch goes pure buzz.
-
-**Budget enforcement:** synthesis trims box quantities (min 1 box) or drops lowest-conviction items to stay within the order budget.
-
-**Recency weighting:** recently announced cigars receive a scoring bonus (≤14 days: +25pts, 15–45 days: +15pts, 46–90 days: +8pts, 91–180 days: +3pts) because customers follow cigar news and ask for the newest releases.
+- Natural-language queries accepted: `"All Magic Toast"`, `"Los Statos, Knuckle Sandwich"`, exact item numbers, description substrings, brand names (e.g. `"All Alec Bradley"`), or parent company names.
 
 ---
 
@@ -297,15 +342,16 @@ The ordering agent uses **Tree of Thought** reasoning to recommend which new cig
 ├── inventory_verifier.py      # Builds Smoke_Shoppe_Inventory_Verified.xlsx
 ├── chainlit.md                # Chatbot welcome screen copy
 ├── tools/
-│   ├── sql_tool.py            # SqlQueryTool — loads XLSX into DuckDB, runs SQL
-│   ├── inventory_tool.py      # DuckDB-backed inventory + transaction access
+│   ├── sql_tool.py            # SqlQueryTool — loads transactions XLSX into DuckDB, runs SQL
+│   ├── inventory_tool.py      # DuckDB-backed inventory + transaction access helpers
+│   ├── xlsx_tool.py           # XlsxReaderTool — generic XLSX reader
 │   ├── reddit_tool.py         # Reddit PRAW wrapper (optional, degrades gracefully)
 │   └── youtube_tool.py        # YouTube Data API wrapper (optional, degrades gracefully)
 ├── data/
 │   ├── Smoke_Shoppe_Transactions.xlsx
 │   ├── Smoke_Shoppe_Inventory.xlsx
 │   ├── Smoke_Shoppe_Inventory_Verified.xlsx  # generated by: python main.py verify-inventory
-│   ├── Brand_Reference.xlsx
+│   ├── Brand_Reference.xlsx                  # brand → parent company lookup
 │   ├── Cigar_Research.xlsx    # populated by: python main.py research --batch
 │   ├── Cigar_Social.xlsx      # populated by: python main.py social --batch
 │   └── Cigar_Buzz.xlsx        # populated by: python main.py social --buzz
@@ -344,7 +390,7 @@ All five servers implement the [Model Context Protocol](https://modelcontextprot
 **Ordering agent tools** (`ordering_server.py`, port 8003):
 | Tool | Description |
 |------|-------------|
-| `generate_order_recommendation` | Full Tree of Thought analysis — returns ranked order list with vitolas, box quantities, and wholesale cost breakdown |
+| `generate_order_recommendation` | Full Tree of Thought analysis — returns restock signals + ranked new-cigar recommendations, grouped by parent company, with wholesale cost breakdown. Accepts `horizon_days`, `order_budget`, `new_cigar_pct`. |
 | `get_fit_profile` | Score a single candidate cigar against the store's sales profile |
 
 **Inventory agent tools** (`inventory_server.py`, port 8004):
