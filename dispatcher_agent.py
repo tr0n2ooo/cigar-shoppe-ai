@@ -32,6 +32,11 @@ _HERE = Path(__file__).parent
 # Modules to skip during auto-discovery (they are not agent servers)
 _SKIP_MODULES = {"dispatcher_agent"}
 
+# House brands — made in-house by Smoke Shoppe, no external research exists for them.
+# The dispatcher skips lookup_cigar and lookup_social_reputation for these.
+HOUSE_PARENT_COMPANIES = {"smoke shoppe"}
+HOUSE_BRANDS = {"smoke shoppe", "signature"}
+
 # Cached discovery result — loaded once per process
 _tools_cache: list[dict] | None = None
 _handlers_cache: dict[str, Any] | None = None
@@ -116,11 +121,17 @@ You have access to specialist tools that cover the full range of shop operations
 ## Routing guidelines
 
 **Cigar profile questions** ("Tell me about X", "What can you tell me about X?", "What's in X?"):
-Call ALL of the following in sequence — the owner expects the full picture:
-1. The cigar research/profile tool (blend, strength, flavor notes, MSRP, critical rating)
-2. The social reputation tool (pro scores, community sentiment, overall score)
-3. The inventory stock search tool (which sizes we carry, on-hand qty, retail price)
-Structure the response as: Blend Details → Ratings & Reviews → Community Reputation → Current Stock at Smoke Shoppe.
+First check if the cigar is a Smoke Shoppe house brand (brands: "Smoke Shoppe", "Signature";
+parent company: "Smoke Shoppe"). Use search_inventory_by_name to check.
+
+- If it IS a house brand: call only search_inventory_by_name and query_xlsx for sales history.
+  Do NOT call lookup_cigar or lookup_social_reputation — no external research exists for
+  house-made cigars. Note in your response that this is a Smoke Shoppe house blend.
+- If it is NOT a house brand: call ALL three in sequence:
+  1. lookup_cigar (blend, strength, flavor notes, MSRP, critical rating)
+  2. lookup_social_reputation (pro scores, community sentiment, overall score)
+  3. search_inventory_by_name (which sizes we carry, on-hand qty, retail price)
+  Structure the response as: Blend Details → Ratings & Reviews → Community Reputation → Current Stock.
 
 **Inventory health questions** ("What's low?", "What should I discount?", "What's not selling?"):
 Call the most specific inventory analysis tool(s). For broad questions call the full report tool.

@@ -659,7 +659,8 @@ class CigarResearcher:
         category: str = "Cigars",
         since: str | None = None,
         sort_by_sales: bool = False,
-        exclude_brands: tuple[str, ...] = ("Smoke Shoppe",),
+        exclude_brands: tuple[str, ...] = ("Smoke Shoppe", "Signature"),
+        exclude_parent_companies: tuple[str, ...] = ("Smoke Shoppe",),
     ) -> list[dict]:
         """
         Research inventory cigars, optionally filtered and sorted by sales.
@@ -669,7 +670,9 @@ class CigarResearcher:
                         that had at least one sale within that window.
         sort_by_sales – if True, research highest-selling items first (units sold
                         in the `since` window, or all-time if since is None).
-        exclude_brands – brands to skip entirely (default: house brand).
+        exclude_brands          – brand names to skip (default: Smoke Shoppe house brands).
+        exclude_parent_companies – parent companies to skip (default: Smoke Shoppe).
+                                   Catches any sub-brand under the house parent.
         """
         from tools.inventory_tool import run_inventory_sql_df
         conditions = []
@@ -678,6 +681,9 @@ class CigarResearcher:
         if exclude_brands:
             brands_sql = ", ".join(f"'{b.replace(chr(39), chr(39)*2)}'" for b in exclude_brands)
             conditions.append(f"Brand NOT IN ({brands_sql})")
+        if exclude_parent_companies:
+            pcs_sql = ", ".join(f"'{p.replace(chr(39), chr(39)*2)}'" for p in exclude_parent_companies)
+            conditions.append(f'"Parent Company" NOT IN ({pcs_sql})')
         where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
         inv = run_inventory_sql_df(
             f'SELECT "Item Number", Description, Brand, "Parent Company", UPC '
