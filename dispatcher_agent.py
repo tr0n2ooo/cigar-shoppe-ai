@@ -20,6 +20,7 @@ import asyncio
 import importlib
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -174,15 +175,27 @@ def _run_tool(tool_name: str, inputs: dict) -> str:
 
 # ── agentic dispatch loop ─────────────────────────────────────────────────────
 
-def run_dispatch(question: str, *, on_tool_start: Any = None) -> str:
+def run_dispatch(
+    question: str,
+    *,
+    on_tool_start: Any = None,
+    on_tool_end: Any = None,
+) -> str:
     """
     Dispatch a natural-language question to the appropriate specialist tools
     and synthesize a final response.
 
+    When Claude requests multiple tool calls in the same response turn they are
+    executed concurrently via a ThreadPoolExecutor — this cuts wall-clock time
+    for questions that trigger several independent lookups (e.g. cigar research
+    + social reputation + stock check all fire at once instead of sequentially).
+
     Args:
         question:      The user's natural-language question.
-        on_tool_start: Optional callable(tool_name, inputs) called before each
-                       tool runs. Useful for showing status in the UI.
+        on_tool_start: Optional callable(tool_name: str, inputs: dict) called
+                       immediately before each tool runs (from a worker thread).
+        on_tool_end:   Optional callable(tool_name: str, output: str) called
+                       immediately after each tool returns (from a worker thread).
 
     Returns:
         A markdown-formatted answer string.
@@ -190,6 +203,15 @@ def run_dispatch(question: str, *, on_tool_start: Any = None) -> str:
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     tools = get_tools()
     messages: list[dict] = [{"role": "user", "content": question}]
+
+    def _execute_block(block) -> tuple[str, str]:
+        """Run a single tool_use block and return (tool_use_id, output)."""
+        if on_tool_start:
+            on_tool_start(block.name, block.input)
+        output = _run_tool(block.name, block.input)
+        if on_tool_end:
+            on_tool_end(block.name, output)
+        return block.id, output
 
     while True:
         response = client.messages.create(
@@ -208,20 +230,31 @@ def run_dispatch(question: str, *, on_tool_start: Any = None) -> str:
         if response.stop_reason != "tool_use":
             return "\n\n".join(text_blocks) if text_blocks else f"Unexpected stop: {response.stop_reason}"
 
-        tool_results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+        tool_blocks = [b for b in response.content if b.type == "tool_use"]
 
-            if on_tool_start:
-                on_tool_start(block.name, block.input)
+        # Run all tool calls for this response turn in parallel when there are
+        # multiple — serial fallback for a single block avoids thread overhead.
+        if len(tool_blocks) == 1:
+            bid, output = _execute_block(tool_blocks[0])
+            results_map = {bid: output}
+        else:
+            max_workers = min(len(tool_blocks), 5)
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {pool.submit(_execute_block, blk): blk for blk in tool_blocks}
+                results_map: dict[str, str] = {}
+                for fut in as_completed(futures):
+                    bid, output = fut.result()
+                    results_map[bid] = output
 
-            output = _run_tool(block.name, block.input)
-            tool_results.append({
+        # Reassemble in the original order Claude requested them
+        tool_results = [
+            {
                 "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": output,
-            })
+                "tool_use_id": blk.id,
+                "content": results_map[blk.id],
+            }
+            for blk in tool_blocks
+        ]
 
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results})

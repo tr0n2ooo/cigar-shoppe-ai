@@ -12,6 +12,7 @@ Run:
     chainlit run ui.py --port 8080
 """
 
+import asyncio
 import os
 
 import chainlit as cl
@@ -28,28 +29,29 @@ def auth_callback(username: str, password: str) -> cl.User | None:
         return cl.User(identifier=username)
     return None
 
+
 # Override labels for tools that benefit from a friendlier or more informative status message.
-# Any tool not listed here gets a formatted fallback: "lookup_cigar" → "Running lookup cigar…"
+# Any tool not listed here gets a formatted fallback: "lookup_cigar" → "Lookup cigar"
 _TOOL_LABEL_OVERRIDES: dict[str, str] = {
-    "generate_order_recommendation": "Generating order recommendation — this runs 3 parallel branches and takes ~30 s…",
-    "get_full_inventory_report":     "Running full inventory analysis (all four analyses)…",
-    "lookup_cigar":                  "Looking up cigar research & ratings…",
-    "lookup_social_reputation":      "Fetching community reputation & buzz scores…",
-    "search_inventory_by_name":      "Checking current stock levels…",
-    "query_xlsx":                    "Querying sales data…",
-    "get_reorder_signals":           "Analyzing reorder signals…",
-    "get_slow_movers":               "Finding slow movers for discounting…",
-    "get_discontinue_candidates":    "Identifying discontinue candidates…",
-    "get_top_profitable":            "Ranking most profitable items…",
+    "generate_order_recommendation": "Generating order recommendation (3 parallel branches, ~30 s)",
+    "get_full_inventory_report":     "Running full inventory analysis (all four analyses)",
+    "lookup_cigar":                  "Looking up cigar research & ratings",
+    "lookup_social_reputation":      "Fetching community reputation & buzz scores",
+    "search_inventory_by_name":      "Checking current stock levels",
+    "query_xlsx":                    "Querying sales data",
+    "get_reorder_signals":           "Analyzing reorder signals",
+    "get_slow_movers":               "Finding slow movers for discounting",
+    "get_discontinue_candidates":    "Identifying discontinue candidates",
+    "get_top_profitable":            "Ranking most profitable items",
 }
 
 
 def _tool_label(tool_name: str) -> str:
     if tool_name in _TOOL_LABEL_OVERRIDES:
         return _TOOL_LABEL_OVERRIDES[tool_name]
-    # Fallback: convert snake_case → "Running look up cigar…"
-    readable = tool_name.replace("_", " ")
-    return f"Running {readable}…"
+    # Fallback: convert snake_case → "Lookup cigar"
+    return tool_name.replace("_", " ").capitalize()
+
 
 WELCOME = """\
 # Smoke Shoppe AI
@@ -87,28 +89,81 @@ async def on_chat_start():
 
 @cl.on_message
 async def on_message(message: cl.Message):
-    status_msg = cl.Message(content="Thinking…")
-    await status_msg.send()
+    """
+    Handle a user message with live, per-tool step feedback.
 
-    # Track which tools fired so we can show live status updates
-    tool_status: list[str] = []
+    Architecture
+    ============
+    run_dispatch() is synchronous and runs in a ThreadPoolExecutor via
+    cl.make_async().  Its on_tool_start / on_tool_end callbacks are invoked
+    from that worker thread.
 
+    To update the Chainlit UI (which requires the asyncio event loop), the
+    callbacks post lightweight events onto an asyncio.Queue via
+    call_soon_threadsafe().  A companion async task (ui_updater) drains the
+    queue and manages cl.Step objects — which requires the Chainlit context
+    and must run on the event loop, not in the worker thread.
+
+    This avoids any asyncio.run_coroutine_threadsafe / blocking-wait pattern
+    that would deadlock the event loop.
+    """
+    loop = asyncio.get_event_loop()
+    event_queue: asyncio.Queue = asyncio.Queue()
+
+    # ── event types ──────────────────────────────────────────────────────────
+    # ("start", tool_name)
+    # ("end",   tool_name, output_snippet)
+    # (None,)  — sentinel: stop the updater
+
+    # ── async UI updater ─────────────────────────────────────────────────────
+    async def ui_updater() -> None:
+        """Drain event_queue and animate cl.Step objects."""
+        active: dict[str, cl.Step] = {}
+        while True:
+            event = await event_queue.get()
+            if event[0] is None:
+                # Close any steps that never received an end event
+                for step in active.values():
+                    step.output = "(completed)"
+                    await step.update()
+                break
+
+            if event[0] == "start":
+                _, tool_name = event
+                step = cl.Step(name=_tool_label(tool_name), type="tool")
+                await step.send()
+                active[tool_name] = step
+
+            elif event[0] == "end":
+                _, tool_name, snippet = event
+                step = active.pop(tool_name, None)
+                if step:
+                    step.output = snippet
+                    await step.update()
+
+    # ── thread-safe callbacks (called from worker thread) ────────────────────
     def on_tool_start(tool_name: str, _inputs: dict) -> None:
-        tool_status.append(_tool_label(tool_name))
+        loop.call_soon_threadsafe(event_queue.put_nowait, ("start", tool_name))
+
+    def on_tool_end(tool_name: str, output: str) -> None:
+        # Pass a short snippet so the completed step shows something useful
+        snippet = (output[:300] + "…") if len(output) > 300 else output
+        loop.call_soon_threadsafe(event_queue.put_nowait, ("end", tool_name, snippet))
+
+    # ── kick off both tasks ───────────────────────────────────────────────────
+    updater_task = asyncio.create_task(ui_updater())
 
     try:
         answer = await cl.make_async(run_dispatch)(
             message.content,
             on_tool_start=on_tool_start,
+            on_tool_end=on_tool_end,
         )
-
-        # Show which tools ran as a subtle prefix if more than one
-        if len(tool_status) > 1:
-            tools_note = "  \n".join(f"_{t}_" for t in tool_status)
-            answer = f"{tools_note}\n\n---\n\n{answer}"
-
-        status_msg.content = answer
     except Exception as exc:
-        status_msg.content = f"**Error:** {exc}"
+        answer = f"**Error:** {exc}"
+    finally:
+        # Signal the updater to stop and wait for it to finish
+        loop.call_soon_threadsafe(event_queue.put_nowait, (None,))
+        await updater_task
 
-    await status_msg.update()
+    await cl.Message(content=answer).send()
