@@ -30,19 +30,19 @@ def auth_callback(username: str, password: str) -> cl.User | None:
     return None
 
 
-# Override labels for tools that benefit from a friendlier or more informative status message.
-# Any tool not listed here gets a formatted fallback: "lookup_cigar" → "Lookup cigar"
+# Override labels for tools — cigar-shop themed, shown in the animated step UI.
+# Any tool not listed here gets a clean formatted fallback.
 _TOOL_LABEL_OVERRIDES: dict[str, str] = {
-    "generate_order_recommendation": "Generating order recommendation (3 parallel branches, ~30 s)",
-    "get_full_inventory_report":     "Running full inventory analysis (all four analyses)",
-    "lookup_cigar":                  "Looking up cigar research & ratings",
-    "lookup_social_reputation":      "Fetching community reputation & buzz scores",
-    "search_inventory_by_name":      "Checking current stock levels",
-    "query_xlsx":                    "Querying sales data",
-    "get_reorder_signals":           "Analyzing reorder signals",
-    "get_slow_movers":               "Finding slow movers for discounting",
-    "get_discontinue_candidates":    "Identifying discontinue candidates",
-    "get_top_profitable":            "Ranking most profitable items",
+    "generate_order_recommendation": "🛒 Rolling up your order list — 3 parallel cuts, may take ~30 s",
+    "get_full_inventory_report":     "📋 Walking the full humidor — four analyses at once",
+    "lookup_cigar":                  "🔬 Pulling blend notes, vitola specs & critical ratings",
+    "lookup_social_reputation":      "💬 Checking the lounge buzz — scores, sentiment & community picks",
+    "search_inventory_by_name":      "🏪 Peeking in the humidor for current stock",
+    "query_xlsx":                    "📊 Cracking the sales ledger",
+    "get_reorder_signals":           "📦 Sniffing out what's running dry",
+    "get_slow_movers":               "🐢 Hunting down the slow burners — discount candidates",
+    "get_discontinue_candidates":    "💀 Flagging the dead sticks — discontinue candidates",
+    "get_top_profitable":            "💰 Tallying the money-makers",
 }
 
 
@@ -50,7 +50,7 @@ def _tool_label(tool_name: str) -> str:
     if tool_name in _TOOL_LABEL_OVERRIDES:
         return _TOOL_LABEL_OVERRIDES[tool_name]
     # Fallback: convert snake_case → "Lookup cigar"
-    return tool_name.replace("_", " ").capitalize()
+    return "🚬 " + tool_name.replace("_", " ").capitalize()
 
 
 WELCOME = """\

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <radialGradient id="bgGrad3" cx="50%" cy="60%" r="55%">
+      <stop offset="0%" stop-color="#241c15"/>
+      <stop offset="100%" stop-color="#1a1410"/>
+    </radialGradient>
+    <linearGradient id="flameGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#c8902a"/>
+      <stop offset="50%" stop-color="#f0b030"/>
+      <stop offset="100%" stop-color="#fff0a0" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="underlineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3d2f1e" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#c8902a"/>
+      <stop offset="70%" stop-color="#c8902a"/>
+      <stop offset="100%" stop-color="#3d2f1e" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="subtleGlow">
+      <feGaussianBlur stdDeviation="0.8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="100" cy="100" r="96" fill="url(#bgGrad3)" stroke="#3d2f1e" stroke-width="1.5"/>
+
+  <!-- Flame icon -->
+  <g transform="translate(100, 52)" filter="url(#softGlow)">
+    <!-- Outer flame -->
+    <path d="M0,22 C-14,14 -12,-2 -4,-10 C-6,-2 0,2 0,2 C0,2 6,-2 4,-10 C12,-2 14,14 0,22 Z"
+          fill="url(#flameGrad)" opacity="0.9"/>
+    <!-- Inner core -->
+    <path d="M0,18 C-6,12 -5,4 0,0 C5,4 6,12 0,18 Z"
+          fill="#fff0a0" opacity="0.5"/>
+  </g>
+
+  <!-- Main wordmark: SMOKE -->
+  <text x="100" y="102"
+        text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="28"
+        font-weight="bold"
+        fill="#c8902a"
+        letter-spacing="6"
+        filter="url(#subtleGlow)">SMOKE</text>
+
+  <!-- Gradient rule -->
+  <rect x="38" y="108" width="124" height="1.2" fill="url(#underlineGrad)" rx="1"/>
+
+  <!-- Sub-word: SHOPPE -->
+  <text x="100" y="126"
+        text-anchor="middle"
+        font-family="Georgia, 'Times New Roman', serif"
+        font-size="13"
+        fill="#f0e6d0"
+        letter-spacing="10">SHOPPE</text>
+
+  <!-- Tagline -->
+  <text x="100" y="150"
+        text-anchor="middle"
+        font-family="Georgia, serif"
+        font-size="7"
+        fill="#9e8060"
+        letter-spacing="2.5">PREMIUM CIGARS &amp; ACCESSORIES</text>
+
+  <!-- Corner leaf accents -->
+  <g opacity="0.5" fill="#c8902a">
+    <!-- Left leaf -->
+    <path d="M 48,162 C 44,156 46,150 52,152 C 50,156 50,160 48,162 Z"/>
+    <path d="M 48,162 C 52,156 56,152 58,156 C 54,158 50,160 48,162 Z"/>
+    <!-- Right leaf (mirrored) -->
+    <path d="M 152,162 C 156,156 154,150 148,152 C 150,156 150,160 152,162 Z"/>
+    <path d="M 152,162 C 148,156 144,152 142,156 C 146,158 150,160 152,162 Z"/>
+  </g>
+</svg>
