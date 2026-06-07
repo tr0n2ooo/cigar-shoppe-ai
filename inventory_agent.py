@@ -338,7 +338,7 @@ def analyze_reorder(
             "months_of_stock": round(months_left, 2) if months_left < 9999 else None,
             "ytd_revenue": round(ytd_revenue, 2),
             "ytd_profit": round(ytd_profit, 2),
-            "markup_pct": round(float(row["% Mark Up"] or 0), 1),
+            "margin_pct": round((float(row["Selling Price"] or 0) - cost) / float(row["Selling Price"]) * 100, 1) if float(row["Selling Price"] or 0) > 0 else 0.0,
             "status": status,
             "urgency": urgency,
             "velocity_trend": _velocity_trend(monthly_vel, mtd_units, day_of_month),
@@ -475,7 +475,7 @@ def analyze_slow_movers(
             "inventory_value_at_cost": round(on_hand * cost, 2),
             "ytd_revenue": round(ytd_revenue, 2),
             "ytd_profit": round(ytd_profit, 2),
-            "markup_pct": round(float(row["% Mark Up"] or 0), 1),
+            "margin_pct": round((float(row["Selling Price"] or 0) - cost) / float(row["Selling Price"]) * 100, 1) if float(row["Selling Price"] or 0) > 0 else 0.0,
             "seasonality": season["label"],
             "seasonality_note": season["note"],
             "prior_year_ytd_units": season["py_ytd_units"],
@@ -611,7 +611,7 @@ def analyze_discontinue_candidates(
             "inventory_value_at_cost": round(inv_value, 2),
             "ytd_revenue": round(ytd_revenue, 2),
             "ytd_profit": round(ytd_profit, 2),
-            "markup_pct": round(float(row["% Mark Up"] or 0), 1),
+            "margin_pct": round((float(row["Selling Price"] or 0) - cost) / float(row["Selling Price"]) * 100, 1) if float(row["Selling Price"] or 0) > 0 else 0.0,
             "seasonality": season["label"],
             "seasonality_note": season["note"],
             "prior_year_ytd_units": season["py_ytd_units"],
@@ -731,7 +731,7 @@ def analyze_top_profitable(
             "months_of_stock": round(months_of_stock, 1) if months_of_stock else None,
             "ytd_revenue": round(ytd_revenue, 2),
             "ytd_profit": round(ytd_profit, 2),
-            "markup_pct": round(float(row["% Mark Up"] or 0), 1),
+            "margin_pct": round((float(row["Selling Price"] or 0) - cost) / float(row["Selling Price"]) * 100, 1) if float(row["Selling Price"] or 0) > 0 else 0.0,
             "stock_adequacy": stock_adequacy,
         })
 
@@ -952,7 +952,7 @@ def _print_top_profitable(result: dict, summarize: bool = False) -> None:
             f"\n  #{item['rank']}  {stock_icon} {item['description']} ({item['brand']})\n"
             f"     YTD Profit: {_fmt_currency(item['ytd_profit'])}  "
             f"YTD Revenue: {_fmt_currency(item['ytd_revenue'])}  "
-            f"Markup: {item['markup_pct']}%\n"
+            f"Margin: {item['margin_pct']}%\n"
             f"     Units/mo: {item['monthly_velocity']}  "
             f"On Hand: {item['on_hand']} ({months_str} stock)  "
             f"Price: {_fmt_currency(item['selling_price'])}"

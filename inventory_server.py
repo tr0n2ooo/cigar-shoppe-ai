@@ -171,7 +171,7 @@ def build_server() -> FastMCP:
             "Rank items by YTD profit — the products to actively push in selling.\n\n"
             "Also flags stock_adequacy for each item so sellers know if supply can support a push:\n"
             "  adequate (>1.5 months) / low (0.5-1.5 months) / critical (<0.5 months) / out_of_stock\n\n"
-            "Each item includes: rank, ytd_profit, ytd_sales_retail, markup_pct, "
+            "Each item includes: rank, ytd_profit, ytd_sales_retail, margin_pct, "
             "monthly_velocity, on_hand, months_of_stock, stock_adequacy.\n\n"
             "Parameters:\n"
             "  category: str — inventory category (default 'Cigars')\n"
