@@ -32,6 +32,18 @@ main.py — convenience launcher
   python main.py order --max-price 22 → filter out cigars above $22/stick
   python main.py order --json          → output raw JSON
 
+  python main.py inventory-server      → start the inventory agent MCP server (stdio, port 8004)
+  python main.py inventory-server --transport sse --port 8004
+  python main.py inventory --low-stock          → items selling but low/out of stock
+  python main.py inventory --stockout-risk      → items likely to run out in 30 days
+  python main.py inventory --slow-movers        → excess stock candidates for discounting
+  python main.py inventory --discontinue        → dead stock candidates to discontinue
+  python main.py inventory --profitable         → top profitable items to push
+  python main.py inventory --all                → run all five analyses
+  python main.py inventory --category "Cigars" → filter by category (default: Cigars)
+  python main.py inventory --summarize          → add Claude natural-language interpretation
+  python main.py inventory --json               → output raw JSON
+
   python main.py verify-inventory      → build Smoke_Shoppe_Inventory_Verified.xlsx
                                          (zeros items never in sales + clamps negatives)
   python main.py verify-inventory --summary   → print stats only, no file written
@@ -97,6 +109,16 @@ def main():
         _sys.argv = [_sys.argv[0]] + rest
         import runpy
         runpy.run_module("ordering_agent", run_name="__main__", alter_sys=True)
+
+    elif cmd == "inventory-server":
+        from inventory_server import main as inventory_server_main
+        inventory_server_main()
+
+    elif cmd == "inventory":
+        import sys as _sys
+        _sys.argv = [_sys.argv[0]] + rest
+        import runpy
+        runpy.run_module("inventory_agent", run_name="__main__", alter_sys=True)
 
     elif cmd == "verify-inventory":
         from inventory_verifier import main as verify_main

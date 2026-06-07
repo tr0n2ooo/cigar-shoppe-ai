@@ -70,11 +70,19 @@ def get_shop_conn(
             tx_path, header=0,
             usecols=["Date", "Item Number", "Quantity", "Item Amount"],
         )
+        tx_df["Date"] = pd.to_datetime(tx_df["Date"], format="%m/%d/%y")
         conn = duckdb.connect()
         conn.register("inventory", inv_df)
         conn.register("transactions", tx_df)
         _shop_cache[cache_key] = conn
     return _shop_cache[cache_key]
+
+
+def clear_inventory_cache(inv_path: str = DEFAULT_INVENTORY) -> None:
+    """Evict cached connections for inv_path so the next query reloads the file."""
+    _inv_cache.pop(inv_path, None)
+    for key in [k for k in _shop_cache if k.startswith(inv_path)]:
+        _shop_cache.pop(key, None)
 
 
 def run_inventory_sql(
@@ -91,3 +99,12 @@ def run_inventory_sql_df(
 ) -> pd.DataFrame:
     """Execute SQL against the inventory table; return result as a DataFrame."""
     return get_inventory_conn(file_path).execute(sql).fetchdf()
+
+
+def run_shop_sql_df(
+    sql: str,
+    inv_path: str = DEFAULT_INVENTORY,
+    tx_path: str = DEFAULT_TRANSACTIONS,
+) -> pd.DataFrame:
+    """Execute SQL against inventory + transactions tables; return result as a DataFrame."""
+    return get_shop_conn(inv_path, tx_path).execute(sql).fetchdf()
