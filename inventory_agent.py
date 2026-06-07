@@ -315,6 +315,12 @@ def analyze_reorder(
             else "low"
         )
 
+        # Velocity-derived reorder recommendations (not read from spreadsheet fields)
+        # velocity_min_level  : safety stock = 2 weeks of supply at current velocity
+        # velocity_reorder_qty: 30-day supply at current velocity, rounded to nearest box of ~25
+        vel_min_level   = max(1, round(monthly_vel * 14 / 30.44)) if monthly_vel > 0 else 0
+        vel_reorder_qty = max(1, round(monthly_vel * 30 / 30.44)) if monthly_vel > 0 else 0
+
         items.append({
             "description": str(row["Description"] or "").strip(),
             "brand": str(row["Brand"] or "").strip(),
@@ -335,6 +341,8 @@ def analyze_reorder(
             "status": status,
             "urgency": urgency,
             "velocity_trend": _velocity_trend(monthly_vel, mtd_units, day_of_month),
+            "velocity_min_level": vel_min_level,
+            "velocity_reorder_qty": vel_reorder_qty,
         })
 
     # Sort: urgency tier ASC, then monthly_velocity DESC within each tier
@@ -837,8 +845,10 @@ def _print_reorder_signals(result: dict, summarize: bool = False) -> None:
         print(
             f"\n  {icon} [{status}] {item['description']} ({item['brand']})\n"
             f"     On Hand: {item['on_hand']}  ({days_str})\n"
-            f"     YTD: {item['ytd_units']} units  MTD: {item['mtd_units']}"
-            f"  ~{item['monthly_velocity']}/mo {trend}\n"
+            f"     Velocity: ~{item['monthly_velocity']}/mo {trend}"
+            f"  |  Suggested min: {item['velocity_min_level']}"
+            f"  |  Suggested order qty: {item['velocity_reorder_qty']}\n"
+            f"     YTD: {item['ytd_units']} units  MTD: {item['mtd_units']}\n"
             f"     Price: {_fmt_currency(item['selling_price'])}  "
             f"YTD Profit: {_fmt_currency(item['ytd_profit'])}"
         )
