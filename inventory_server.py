@@ -56,16 +56,17 @@ def build_server() -> FastMCP:
         description=(
             "Unified reorder signal analysis covering all stock-health problems in one view:\n\n"
             "  • out_of_stock  — On Hand = 0, item still actively selling (lost sales NOW)\n"
-            "  • below_minimum — On Hand ≤ max(Minimum Level, 3), item still selling\n"
             "  • stockout_risk — On Hand > 0 but supply runs out within days_threshold days\n"
             "                    at the current YTD velocity\n\n"
+            "Minimum Level and Reorder Quantity fields are ignored — all signals are driven\n"
+            "purely by sales velocity and current on-hand quantity.\n\n"
             "Items are sorted by urgency tier first (critical → high → medium → low), "
             "then by monthly_velocity descending within each tier — fastest-moving problems first.\n\n"
             "urgency is derived from days_until_stockout:\n"
             "  critical  < 7 days  |  high  7-14 days  |  medium  14-21 days  |  low  21+ days\n\n"
-            "Each item includes: status, urgency, on_hand, minimum_level, reorder_quantity, "
+            "Each item includes: status, urgency, on_hand, "
             "monthly_velocity, days_until_stockout, months_of_stock, "
-            "ytd/mtd/wtd units, selling_price, ytd_profit, velocity_trend.\n\n"
+            "ytd/mtd units, selling_price, ytd_profit, velocity_trend.\n\n"
             "Parameters:\n"
             "  category: str — inventory category (default 'Cigars')\n"
             "  days_threshold: int — stockout risk window in days (default 30)\n"
@@ -221,7 +222,7 @@ def build_server() -> FastMCP:
         description=(
             "Search the live inventory for specific cigars by name, brand, or description fragment.\n\n"
             "Returns every matching SKU with:\n"
-            "  on_hand, on_order, minimum_level, reorder_quantity,\n"
+            "  on_hand, on_order, selling_price, cost, category.\n"
             "  selling_price, cost, brand, parent_company, category.\n\n"
             "Use this whenever the user asks about a specific product:\n"
             "  'Do we have X in stock?', 'How many of X do we carry?',\n"
@@ -245,8 +246,6 @@ def build_server() -> FastMCP:
                 Category,
                 "On Hand",
                 "On Order",
-                "Minimum Level",
-                "Reorder Quantity",
                 "Selling Price",
                 "Cost"
             FROM inventory

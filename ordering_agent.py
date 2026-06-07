@@ -292,9 +292,9 @@ def _annotate_restock_costs(
     """
     Add box-aligned reorder quantities and costs to each reorder item.
 
-    Demand is computed in sticks (from configured reorder_quantity, seasonal
-    adjustment, or velocity × horizon), then rounded UP to the nearest whole
-    box — because cigars can only be ordered in full boxes.
+    Demand is computed in sticks (velocity × horizon, with seasonal adjustment),
+    then rounded UP to the nearest whole box — because cigars can only be
+    ordered in full boxes. Minimum Level and Reorder Quantity fields are ignored.
 
     Fields added:
       box_size            — sticks per box (estimated from brand knowledge)
@@ -308,17 +308,14 @@ def _annotate_restock_costs(
     from math import ceil
     result = []
     for item in items:
-        configured_qty = int(item.get("reorder_quantity") or 0)
-        cost_per       = float(item.get("cost") or 0.0)
-        item_num       = str(item.get("item_number") or "").strip()
-        velocity       = float(item.get("monthly_velocity") or 0.0)
-        brand          = str(item.get("brand") or "")
-        description    = str(item.get("description") or "")
+        cost_per    = float(item.get("cost") or 0.0)
+        item_num    = str(item.get("item_number") or "").strip()
+        velocity    = float(item.get("monthly_velocity") or 0.0)
+        brand       = str(item.get("brand") or "")
+        description = str(item.get("description") or "")
 
-        # Baseline demand: configured reorder_quantity or velocity-based floor
-        if configured_qty <= 0:
-            configured_qty = max(int(item.get("minimum_level") or 0), 6)
-        demand_units = configured_qty
+        # Baseline demand: velocity × horizon (minimum 1 box worth)
+        demand_units = max(6, ceil(velocity * horizon_days / 30.44))
 
         seasonal_factor        = None
         seasonal_demand_units  = None

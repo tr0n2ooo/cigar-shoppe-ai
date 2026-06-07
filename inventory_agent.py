@@ -210,15 +210,14 @@ def analyze_reorder(
     inv_path: str | None = None,
 ) -> dict:
     """
-    Unified reorder signal analysis covering three situations in one view:
+    Unified reorder signal analysis covering two situations:
 
-      • out_of_stock    — On Hand = 0, still selling (already losing sales)
-      • below_minimum   — On Hand ≤ max(Minimum Level, 3), still selling
-      • stockout_risk   — On Hand > 0 but supply runs out within days_threshold days
-                          at the current YTD velocity
+      • out_of_stock  — On Hand = 0, still selling (already losing sales)
+      • stockout_risk — On Hand > 0 but supply runs out within days_threshold days
+                        at the current YTD velocity
 
-    An item can satisfy multiple conditions; status priority is:
-      out_of_stock > below_minimum > stockout_risk
+    Minimum Level and Reorder Quantity fields are ignored — all signals are
+    driven purely by sales velocity and current on-hand quantity.
 
     urgency is derived from days_until_stockout (0 for OOS items):
       critical  — < 7 days   🔴
@@ -264,8 +263,6 @@ def analyze_reorder(
         i."Item Number",
         i."On Hand",
         i.Allocated,
-        i."Minimum Level",
-        i."Reorder Quantity",
         i.Cost,
         i."Selling Price",
         i."% Mark Up",
@@ -281,7 +278,6 @@ def analyze_reorder(
       AND COALESCE(t.ytd_units, 0) >= {min_ytd_units}
       AND (
             i."On Hand" = 0
-            OR i."On Hand" <= GREATEST(COALESCE(i."Minimum Level", 0), 3)
             OR (
                 i."On Hand" > 0
                 AND i."On Hand" / (COALESCE(t.ytd_units, 0.001) / {ytd_months}) < {months_threshold}
@@ -300,7 +296,6 @@ def analyze_reorder(
         mtd_units = float(row["mtd_units"] or 0)
         ytd_revenue = float(row["ytd_revenue"] or 0)
         cost = float(row["Cost"] or 0)
-        min_level = float(row["Minimum Level"] or 0)
         monthly_vel = ytd_units / ytd_months
         ytd_profit = ytd_revenue - (ytd_units * cost)
 
@@ -311,10 +306,7 @@ def analyze_reorder(
         else:
             months_left = on_hand / monthly_vel if monthly_vel > 0 else 9999
             days_left = months_left * 30.44
-            if on_hand <= max(min_level, 3):
-                status = "below_minimum"
-            else:
-                status = "stockout_risk"
+            status = "stockout_risk"
 
         urgency = (
             "critical" if days_left < 7
@@ -330,8 +322,6 @@ def analyze_reorder(
             "item_number": str(row["Item Number"] or "").strip(),
             "on_hand": int(on_hand),
             "allocated": int(row["Allocated"] or 0),
-            "minimum_level": int(min_level),
-            "reorder_quantity": int(row["Reorder Quantity"] or 0),
             "cost": round(cost, 2),
             "selling_price": round(float(row["Selling Price"] or 0), 2),
             "ytd_units": int(ytd_units),
@@ -827,7 +817,6 @@ def _print_reorder_signals(result: dict, summarize: bool = False) -> None:
     urgency_icons = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
     status_labels = {
         "out_of_stock": "OUT OF STOCK",
-        "below_minimum": "BELOW MIN",
         "stockout_risk": "STOCKOUT RISK",
     }
     trend_icons = {"accelerating": "⬆", "decelerating": "⬇", "stable": "→"}
@@ -847,8 +836,7 @@ def _print_reorder_signals(result: dict, summarize: bool = False) -> None:
 
         print(
             f"\n  {icon} [{status}] {item['description']} ({item['brand']})\n"
-            f"     On Hand: {item['on_hand']}  Min Level: {item['minimum_level']}"
-            f"  Reorder Qty: {item['reorder_quantity']}  ({days_str})\n"
+            f"     On Hand: {item['on_hand']}  ({days_str})\n"
             f"     YTD: {item['ytd_units']} units  MTD: {item['mtd_units']}"
             f"  ~{item['monthly_velocity']}/mo {trend}\n"
             f"     Price: {_fmt_currency(item['selling_price'])}  "
