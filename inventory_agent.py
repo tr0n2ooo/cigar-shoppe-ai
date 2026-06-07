@@ -44,6 +44,7 @@ from typing import Any
 import anthropic
 import pandas as pd
 
+from cigar_researcher import _create_with_backoff
 from tools.inventory_tool import clear_inventory_cache, run_inventory_sql_df, run_shop_sql_df
 
 INVENTORY_FILE = Path(__file__).parent / "data" / "Smoke_Shoppe_Inventory_Verified.xlsx"
@@ -791,7 +792,8 @@ def summarize_with_claude(analysis_result: dict) -> str:
         "Lead each bullet with the most important insight or action."
     )
 
-    response = client.messages.create(
+    response = _create_with_backoff(
+        client,
         model="claude-sonnet-4-6",
         max_tokens=600,
         system=_SUMMARIZE_SYSTEM,

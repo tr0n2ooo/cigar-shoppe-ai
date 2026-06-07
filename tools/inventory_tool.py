@@ -21,6 +21,7 @@ Public helpers:
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import duckdb
@@ -33,6 +34,13 @@ DEFAULT_TRANSACTIONS = str(DATA_DIR / "Smoke_Shoppe_Transactions.xlsx")
 # Module-level cache: path(s) → connection
 _inv_cache:  dict[str, duckdb.DuckDBPyConnection] = {}
 _shop_cache: dict[str, duckdb.DuckDBPyConnection] = {}
+
+# DuckDB in-memory connections are not thread-safe for concurrent .execute() calls.
+# The dispatcher runs multiple tools in parallel via ThreadPoolExecutor, so we need
+# a lock per connection family to serialise query execution across threads.
+# Queries are fast (ms), so contention is minimal in practice.
+_inv_lock  = threading.Lock()
+_shop_lock = threading.Lock()
 
 
 def get_inventory_conn(file_path: str = DEFAULT_INVENTORY) -> duckdb.DuckDBPyConnection:
@@ -80,9 +88,11 @@ def get_shop_conn(
 
 def clear_inventory_cache(inv_path: str = DEFAULT_INVENTORY) -> None:
     """Evict cached connections for inv_path so the next query reloads the file."""
-    _inv_cache.pop(inv_path, None)
-    for key in [k for k in _shop_cache if k.startswith(inv_path)]:
-        _shop_cache.pop(key, None)
+    with _inv_lock:
+        _inv_cache.pop(inv_path, None)
+    with _shop_lock:
+        for key in [k for k in _shop_cache if k.startswith(inv_path)]:
+            _shop_cache.pop(key, None)
 
 
 def run_inventory_sql(
@@ -90,7 +100,8 @@ def run_inventory_sql(
     file_path: str = DEFAULT_INVENTORY,
 ) -> list[tuple]:
     """Execute SQL against the inventory table; return rows as list of tuples."""
-    return get_inventory_conn(file_path).execute(sql).fetchall()
+    with _inv_lock:
+        return get_inventory_conn(file_path).execute(sql).fetchall()
 
 
 def run_inventory_sql_df(
@@ -98,7 +109,8 @@ def run_inventory_sql_df(
     file_path: str = DEFAULT_INVENTORY,
 ) -> pd.DataFrame:
     """Execute SQL against the inventory table; return result as a DataFrame."""
-    return get_inventory_conn(file_path).execute(sql).fetchdf()
+    with _inv_lock:
+        return get_inventory_conn(file_path).execute(sql).fetchdf()
 
 
 def run_shop_sql_df(
@@ -107,4 +119,5 @@ def run_shop_sql_df(
     tx_path: str = DEFAULT_TRANSACTIONS,
 ) -> pd.DataFrame:
     """Execute SQL against inventory + transactions tables; return result as a DataFrame."""
-    return get_shop_conn(inv_path, tx_path).execute(sql).fetchdf()
+    with _shop_lock:
+        return get_shop_conn(inv_path, tx_path).execute(sql).fetchdf()

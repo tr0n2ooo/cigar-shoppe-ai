@@ -26,6 +26,8 @@ from typing import Any
 
 import anthropic
 
+from cigar_researcher import _create_with_backoff
+
 # ── tool discovery ────────────────────────────────────────────────────────────
 
 _HERE = Path(__file__).parent
@@ -214,7 +216,8 @@ def run_dispatch(
         return block.id, output
 
     while True:
-        response = client.messages.create(
+        response = _create_with_backoff(
+            client,
             model="claude-sonnet-4-6",
             max_tokens=4096,
             system=SYSTEM_PROMPT,

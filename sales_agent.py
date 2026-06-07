@@ -27,6 +27,7 @@ from pathlib import Path
 
 import anthropic
 
+from cigar_researcher import _create_with_backoff
 from tools.sql_tool import SqlQueryTool
 
 DEFAULT_XLSX = str(
@@ -127,7 +128,8 @@ def run_query(question: str, xlsx_path: str = DEFAULT_XLSX) -> str:
     messages = [{"role": "user", "content": question}]
 
     while True:
-        response = client.messages.create(
+        response = _create_with_backoff(
+            client,
             model="claude-sonnet-4-6",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
