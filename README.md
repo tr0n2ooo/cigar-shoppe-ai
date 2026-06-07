@@ -1,6 +1,6 @@
 # Smoke Shoppe AI
 
-A multi-agent AI analyst for the Smoke Shoppe. Ask questions about sales, inventory, cigar details, and social reputation in plain English — the agents query the data and respond with specific numbers and insights.
+A multi-agent AI analyst for the Smoke Shoppe. Ask questions about sales, inventory, cigar details, and social reputation in plain English — the dispatcher routes each question to the right agents and responds with specific numbers and insights.
 
 ---
 
@@ -10,59 +10,40 @@ A multi-agent AI analyst for the Smoke Shoppe. Ask questions about sales, invent
 Chainlit UI (ui.py)
         │
         ▼
-  sales_agent.py  ── sales analyst agentic loop (Anthropic SDK)
+dispatcher_agent.py  ── natural-language dispatcher (Anthropic SDK agentic loop)
         │
-   ┌────┴──────────────────┐
-   ▼                       ▼
-SqlQueryTool          lookup_cigar_info
-(tools/sql_tool.py)   (cigar_researcher.py)
-        │                   │
-   DuckDB (in-memory)   Cigar_Research.xlsx
-   loaded from           (blend, MSRP, ratings cache)
-   transactions XLSX          │
-                        Claude web search (native)
-
-sales_server.py         — sales analyst as MCP server (port 8000)
-research_server.py      — cigar research as MCP server (port 8001)
-social_intel_server.py  — social intelligence as MCP server (port 8002)
-ordering_server.py      — ordering agent as MCP server (port 8003)
-inventory_server.py     — inventory analyst as MCP server (port 8004)
-
-social_intel_agent.py   — reputation & buzz agent (Anthropic SDK)
+        │  auto-discovers all *_server.py tools at startup via FastMCP introspection
         │
-   ┌────┴──────────────────────────────┐
-   ▼                                   ▼
-Claude web search (native)        Optional enrichment
-(Halfwheel, CA, BMP, Reddit,      Reddit PRAW (REDDIT_CLIENT_ID)
- YouTube, Halfwheel new releases)  YouTube Data API (YOUTUBE_API_KEY)
-        │                                   │
-   Cigar_Social.xlsx               Cigar_Buzz.xlsx
-   (per-SKU reputation cache)      (new/upcoming buzz feed)
-                                           │
-                                           ▼
-                                  ordering_agent.py
-                                  Tree of Thought ordering analysis
-                                  (conservative / balanced / adventurous)
-                                           │
-                                  ┌────────┴────────────────┐
-                                  ▼                         ▼
-                         Cigar_Buzz.xlsx          inventory_agent.py
-                         (new SKU candidates)     analyze_reorder()
-                                                  (low-stock reorder signals)
-                                                           │
-                                                  Smoke_Shoppe_Inventory_Verified.xlsx
-                                                  (DuckDB — inventory + transactions)
+   ┌────┬────────────┬──────────────┬──────────────┬──────────────┐
+   ▼    ▼            ▼              ▼              ▼              ▼
+sales  research   social_intel  ordering       inventory
+server server     server        server         server
+(8000) (8001)     (8002)        (8003)         (8004)
+   │       │           │             │              │
+   ▼       ▼           ▼             ▼              ▼
+sales  cigar_      social_       ordering_      inventory_
+agent  researcher  intel_agent   agent          agent
+       │           │             │              │
+   DuckDB      Cigar_        Cigar_         Smoke_Shoppe_
+   (trans-     Research.xlsx Social.xlsx    Inventory_
+   actions)    Cigar_Buzz.xlsx              Verified.xlsx
+               │             │             (DuckDB: inventory
+           Claude web     Claude web        + transactions)
+           search         search +
+                          optional Reddit/
+                          YouTube APIs
 
-inventory_agent.py      — inventory analysis agent (SQL + DuckDB, no LLM required)
+ordering_agent.py  — Tree of Thought (conservative / balanced / adventurous branches)
         │
-   ┌────┴───────────────────────────────────┐
-   ▼                                        ▼
-run_shop_sql_df()                  Smoke_Shoppe_Inventory_Verified.xlsx
-(DuckDB: inventory + transactions)   Discontinued / Discontinued Reason
-                                     columns written back by agent
+   ┌────┴──────────────┐
+   ▼                   ▼
+Cigar_Buzz.xlsx    inventory_agent.analyze_reorder()
+(new SKU           (low-stock reorder signals)
+ candidates)
 ```
 
 **Key design decisions:**
+- **Dispatcher agent** (`dispatcher_agent.py`) routes all chat messages — it auto-discovers every `*_server.py`'s tools via FastMCP introspection at startup. Adding a new server file automatically makes its tools available in the UI with no changes to the dispatcher.
 - **Anthropic SDK directly** for all agent loops — no third-party agent framework
 - **Claude native web search** (`web_search_20250305`) for all research — no Brave/Serp keys needed
 - **DuckDB** for all data access — agents write SQL; only result rows enter context, never full DataFrames
@@ -329,6 +310,7 @@ The inventory agent maintains `Discontinued` and `Discontinued Reason` columns i
 .
 ├── main.py                    # Unified launcher — all commands above
 ├── ui.py                      # Chainlit chatbot UI
+├── dispatcher_agent.py        # Natural-language dispatcher — auto-discovers all *_server.py tools
 ├── sales_agent.py             # Sales analyst agent (Anthropic SDK agentic loop)
 ├── sales_server.py            # FastMCP server — sales agent as MCP tools (port 8000)
 ├── cigar_researcher.py        # Cigar research agent + CLI + batch populator
@@ -340,7 +322,9 @@ The inventory agent maintains `Discontinued` and `Discontinued Reason` columns i
 ├── inventory_agent.py         # Inventory analysis agent + CLI (no LLM required)
 ├── inventory_server.py        # FastMCP server — inventory agent as MCP tools (port 8004)
 ├── inventory_verifier.py      # Builds Smoke_Shoppe_Inventory_Verified.xlsx
-├── chainlit.md                # Chatbot welcome screen copy
+├── chainlit.md                # Chatbot welcome screen (fallback)
+├── .chainlit/translations/
+│   └── en-US.md               # Locale-specific welcome screen
 ├── tools/
 │   ├── sql_tool.py            # SqlQueryTool — loads transactions XLSX into DuckDB, runs SQL
 │   ├── inventory_tool.py      # DuckDB-backed inventory + transaction access helpers
@@ -371,6 +355,7 @@ All five servers implement the [Model Context Protocol](https://modelcontextprot
 |------|-------------|
 | `query_xlsx` | Natural-language Q&A over transactions and inventory data |
 | `describe_xlsx` | Fast structural overview — no LLM call |
+| `analyze_fit_profile` | Score a candidate cigar against the store's proven sales profile (wrapper, strength, vitola, price, brand) |
 
 **Cigar research tools** (`research_server.py`, port 8001):
 | Tool | Description |
@@ -401,6 +386,7 @@ All five servers implement the [Model Context Protocol](https://modelcontextprot
 | `get_discontinue_candidates` | Dead stock with ≤ 2 YTD units — back-half seasonal items automatically excluded |
 | `get_top_profitable` | Top items by YTD gross profit with stock adequacy indicator |
 | `get_full_inventory_report` | All four analyses in one call |
+| `search_inventory_by_name` | Search live inventory by name/brand fragment — returns on-hand qty, price, cost, reorder info for all matching SKUs |
 
 **Connect via Claude Desktop** — add to `claude_desktop_config.json`:
 ```json

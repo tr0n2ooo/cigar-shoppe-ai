@@ -36,6 +36,7 @@ from inventory_agent import (
     run_all_analyses,
     summarize_with_claude,
 )
+from tools.inventory_tool import run_shop_sql_df
 
 
 def build_server() -> FastMCP:
@@ -214,6 +215,57 @@ def build_server() -> FastMCP:
             for key in result:
                 result[key]["claude_summary"] = summarize_with_claude(result[key])
         return json.dumps(result, indent=2, default=str)
+
+    @mcp.tool(
+        name="search_inventory_by_name",
+        description=(
+            "Search the live inventory for specific cigars by name, brand, or description fragment.\n\n"
+            "Returns every matching SKU with:\n"
+            "  on_hand, on_order, minimum_level, reorder_quantity,\n"
+            "  selling_price, cost, brand, parent_company, category.\n\n"
+            "Use this whenever the user asks about a specific product:\n"
+            "  'Do we have X in stock?', 'How many of X do we carry?',\n"
+            "  'What sizes of X do we stock?', 'What's the price of X?'\n\n"
+            "Parameters:\n"
+            "  search_term: str — case-insensitive substring matched against Description and Brand.\n"
+            "  category: str — optional category filter (default: all categories)."
+        ),
+    )
+    def search_inventory_by_name(
+        search_term: str,
+        category: str = "",
+    ) -> str:
+        term = search_term.replace("'", "''")
+        cat_filter = f"AND LOWER(Category) = '{category.lower()}'" if category else ""
+        sql = f"""
+            SELECT
+                Description,
+                Brand,
+                "Parent Company",
+                Category,
+                "On Hand",
+                "On Order",
+                "Minimum Level",
+                "Reorder Quantity",
+                "Selling Price",
+                "Cost"
+            FROM inventory
+            WHERE (
+                LOWER(Description) LIKE '%{term.lower()}%'
+                OR LOWER(Brand) LIKE '%{term.lower()}%'
+            )
+            {cat_filter}
+            ORDER BY "On Hand" DESC
+            LIMIT 30
+        """
+        df = run_shop_sql_df(sql)
+        if df.empty:
+            return json.dumps({"found": 0, "search_term": search_term, "items": []})
+        rows = df.to_dict(orient="records")
+        for r in rows:
+            on_hand = r.get("On Hand", 0) or 0
+            r["stock_status"] = "in_stock" if on_hand > 0 else "out_of_stock"
+        return json.dumps({"found": len(rows), "search_term": search_term, "items": rows}, default=str)
 
     return mcp
 

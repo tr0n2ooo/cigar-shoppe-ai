@@ -28,7 +28,7 @@ from sales_agent import DEFAULT_XLSX, run_query, analyze_sales_fit
 from tools.sql_tool import SqlQueryTool
 
 
-def build_server(xlsx_path: str) -> FastMCP:
+def build_server(xlsx_path: str = DEFAULT_XLSX) -> FastMCP:
     file_name = Path(xlsx_path).name
     mcp = FastMCP(
         name=f"xlsx-analyst ({file_name})",
