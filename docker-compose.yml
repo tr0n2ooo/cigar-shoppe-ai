@@ -1,6 +1,6 @@
 services:
   cigar-shoppe:
-    image: cigar-shoppe-ai:0.9
+    image: cigar-shoppe-ai:0.10
     restart: unless-stopped
     ports:
       - "8000:8000"

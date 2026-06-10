@@ -1,4 +1,4 @@
-# Smoke Shoppe AI — v0.9
+# Smoke Shoppe AI — v0.11
 
 **Live at [cigar.tr0n2ooo.synology.me](https://cigar.tr0n2ooo.synology.me)**
 
@@ -7,6 +7,20 @@ A multi-agent AI analyst for the Smoke Shoppe. Ask questions about sales, invent
 ---
 
 ## Changelog
+
+### v0.11 (2026-06-10)
+**Inline charts in the Chainlit UI**
+- `chart_generator.py` — parses structured tool outputs and produces Plotly figures; returns `None` gracefully for tools that don't warrant a chart
+- Charts render automatically in the chat UI after the relevant tool completes, with no user action required
+- **Inventory charts** (auto-generated): days-of-stock remaining by urgency tier (`get_reorder_signals`), YTD profit by SKU with stock-adequacy color coding (`get_top_profitable`), months of excess stock (`get_slow_movers`), capital tied up in dead stock (`get_discontinue_candidates`), 4-panel summary (`get_full_inventory_report`)
+- **Sales charts** (dispatcher-callable): top brands by YTD revenue (`get_top_brands_chart`), monthly revenue + unit trend dual-axis (`get_revenue_trend_chart`) — new tools added to `sales_server.py`
+- All charts use the Smoke Shoppe amber/brown palette with hover tooltips; rendered via `cl.Plotly` (interactive, not static images)
+
+### v0.10 (2026-06-10)
+**Performance — speed optimizations**
+- **Parallel ToT branches** — the three ordering-agent thought branches (`conservative`, `balanced`, `adventurous`) now run concurrently via `ThreadPoolExecutor(max_workers=3)`; each branch is an independent Claude call with no shared mutable state, so parallelization is safe and cuts branch time by ~⅔ (~45 s sequential → ~15 s concurrent)
+- **Selective model routing** — lighter tasks switch to `claude-haiku-4-5` (3–5× faster inference): dispatcher routing (`dispatcher_agent.py`), SQL generation and sales analytics (`sales_agent.py`), and inventory summarization (`inventory_agent.py`); heavier reasoning tasks (ordering branches and synthesis) stay on `claude-sonnet-4-6`
+- **Branch `max_tokens` trimmed** — ordering branch token limit reduced from 3000 → 1500; branches rarely exceed 1200 tokens in practice, so this shaves generation latency with negligible quality impact
 
 ### v0.9 (2026-06-09)
 **Agentic AI Course Concepts (CMU Capstone)**
@@ -96,7 +110,7 @@ The ReAct loop structure is visible in `--verbose` mode, which narrates each ste
 The new-cigar section of every order run uses Tree of Thought, implemented in `ordering_agent.py`:
 
 1. **Thought generation** — three independent branches (`conservative`, `balanced`, `adventurous`) each evaluate the full candidate pool using a different strategy weighting (fit vs. buzz score ratio)
-2. **Branch evaluation** — each branch is scored by Claude using a branch-specific system prompt; branches are pruned by a 70-point threshold on fit and buzz scores
+2. **Branch evaluation** — each branch is a separate Claude call with a branch-specific system prompt; branches run **concurrently** via `ThreadPoolExecutor(max_workers=3)` since they share no mutable state; branches are pruned by a 70-point threshold on fit and buzz scores
 3. **DFS state management** — the `craziness` parameter (0–10) controls branch spread; the `OrderingAgent` class holds short-term state (hypothetical order being built) across branch iterations
 4. **Synthesis / voting** — a final synthesis step reviews all three branch outputs and resolves conflicts by consensus; high-conviction items appear in 2–3 branches
 
@@ -188,7 +202,8 @@ Cigar_Buzz.xlsx    inventory_agent.analyze_reorder()
 - **Long-term memory** persists order decisions across sessions and evaluates them against actual sales
 - **Chainlit** for the web UI — themed with the Smoke Shoppe brand (dark amber/gold palette)
 - **Graceful degradation** — Reddit, YouTube, and BGE reranker are optional; all agents work without them
-- **Tree of Thought ordering** — three independent branches synthesized into a final recommendation with vitola, box quantity, and wholesale cost estimates
+- **Tree of Thought ordering** — three branches run in parallel via `ThreadPoolExecutor`; synthesized into a final recommendation with vitola, box quantity, and wholesale cost estimates
+- **Selective model routing** — `claude-haiku-4-5` for routing, SQL generation, and summarization; `claude-sonnet-4-6` reserved for ordering branches and synthesis where reasoning quality matters
 
 ---
 
@@ -216,7 +231,7 @@ All data files live in `data/`:
 
 ```bash
 uv sync
-# or: pip install anthropic chainlit chromadb duckdb mcp numpy openpyxl pandas sentence-transformers
+# or: pip install anthropic chainlit chromadb duckdb mcp numpy openpyxl pandas plotly reportlab sentence-transformers
 ```
 
 ### 2. Set environment variables
@@ -328,6 +343,12 @@ python main.py order --craziness 7             # more adventurous branching (def
 python main.py order --max-price 22            # filter out cigars above $22/stick MSRP
 python main.py order --json                    # output raw JSON instead of pretty-print
 
+# Export
+python main.py order --export xlsx             # → exports/order_YYYY-MM-DD.xlsx
+python main.py order --export pdf              # → exports/order_YYYY-MM-DD.pdf
+python main.py order --export both             # → both formats in one run
+python main.py order --export xlsx --export-path /tmp/order.xlsx  # explicit path
+
 # ── Inventory agent ───────────────────────────────────────────────────────────
 python main.py inventory-server                              # MCP server (stdio)
 python main.py inventory-server --transport sse --port 8004  # MCP server (HTTP/SSE)
@@ -403,7 +424,7 @@ At the start of every run, the ordering agent calls the inventory agent's `analy
 1. Load the buzz feed (`Cigar_Buzz.xlsx`) — new/upcoming cigars with social excitement scores
 2. Filter out any cigars already in stock (fuzzy-matched against `Smoke_Shoppe_Inventory_Verified.xlsx`)
 3. Enrich each candidate with a fit profile (wrapper, strength, vitola, price, brand — scored against proven sales patterns)
-4. Run three independent evaluation branches:
+4. Run three independent evaluation branches **in parallel** (`ThreadPoolExecutor(max_workers=3)`):
    - **Conservative** — proven fit required (fit 75%, buzz 25%)
    - **Balanced** — equal weight to fit and social momentum (50/50)
    - **Adventurous** — chases buzz; accepts profile mismatches (buzz 70%, fit 30%)
@@ -443,14 +464,26 @@ At the start of every run, the ordering agent calls the inventory agent's `analy
 🌿  [BRANCH]  +1.3s
    Starting CONSERVATIVE branch — proven fit required…
 
-🌿  [BRANCH]  +9.1s
+🌿  [BRANCH]  +1.3s
+   Starting BALANCED branch — equal weight to fit and buzz…
+
+🌿  [BRANCH]  +1.4s
+   Starting ADVENTUROUS branch — chasing buzz score…
+
+🌿  [BRANCH]  +14.2s
    CONSERVATIVE branch complete — 2 selection(s).
       • Rocky Patel Vintage 1990 [high confidence]
 
-⚖️   [SYNTHESIS]  +27.4s
+🌿  [BRANCH]  +14.9s
+   BALANCED branch complete — 2 selection(s).
+
+🌿  [BRANCH]  +15.6s
+   ADVENTUROUS branch complete — 2 selection(s).
+
+⚖️   [SYNTHESIS]  +15.6s
    Synthesizing 3 branches into final recommendation (with long-term memory feedback).
 
-⚖️   [SYNTHESIS]  +35.2s
+⚖️   [SYNTHESIS]  +23.4s
    Synthesis complete — 2 cigar(s) recommended.
       • Rocky Patel Vintage 1990 — Toro [high conviction, agreed by: conservative, balanced, adventurous]
 
@@ -464,6 +497,33 @@ At the start of every run, the ordering agent calls the inventory agent's `analy
 ```
 
 All events are also stored in `result["_verbose_events"]` as a list of dicts for programmatic access.
+
+### Export to XLSX / PDF
+
+After any order run, add `--export xlsx`, `--export pdf`, or `--export both` to save a formatted purchase-order document:
+
+```
+python main.py order --export xlsx
+# → exports/order_2026-06-10.xlsx
+
+python main.py order --export pdf
+# → exports/order_2026-06-10.pdf
+
+python main.py order --export both --export-path /tmp/order
+# → /tmp/order.xlsx  and  /tmp/order.pdf
+```
+
+**XLSX** (via `openpyxl`) — four sheets: *Summary* (run parameters + cost breakdown), *New Cigars* (ranked recommendations with conviction, branches, vitola, cost), *Restock* (low-stock items with urgency, velocity, box quantities), *By Vendor* (consolidated PO grouped by parent company with subtotals).
+
+**PDF** (via `reportlab`) — single printable document with the same four sections, formatted as a purchase order. Suitable for printing or emailing to a distributor rep.
+
+The export module (`order_export.py`) also has a public API:
+
+```python
+from order_export import to_xlsx, to_pdf
+xlsx_path = to_xlsx(result)          # result from generate_order_recommendation()
+pdf_path  = to_pdf(result, "/tmp/")  # save to a specific directory
+```
 
 ### Order grouped by parent company
 
@@ -527,6 +587,8 @@ All servers implement the [Model Context Protocol](https://modelcontextprotocol.
 | `query_xlsx` | Natural-language Q&A over transactions and inventory data |
 | `describe_xlsx` | Fast structural overview — no LLM call |
 | `analyze_fit_profile` | Score a candidate cigar against the store's proven sales profile |
+| `get_top_brands_chart` | Top brands by YTD revenue as chart-ready JSON (rendered as bar chart in UI) |
+| `get_revenue_trend_chart` | Monthly revenue + units trend as chart-ready JSON (dual-axis line/bar in UI) |
 
 **Cigar research tools** (`research_server.py`, port 8001):
 | Tool | Description |
@@ -578,8 +640,10 @@ All servers implement the [Model Context Protocol](https://modelcontextprotocol.
 ├── research_rag.py            # RAG layer: ChromaDB index, MMR, BGE reranker
 ├── social_intel_agent.py      # Social intelligence agent + CLI + batch populator
 ├── social_intel_server.py     # FastMCP server — social agent as MCP tools (port 8002)
-├── ordering_agent.py          # Tree of Thought ordering agent + CLI + verbose demo mode
+├── ordering_agent.py          # Tree of Thought ordering agent + CLI + verbose demo mode + export flags
 ├── ordering_server.py         # FastMCP server — ordering agent as MCP tools (port 8003)
+├── chart_generator.py         # Parse tool outputs → Plotly figures for inline Chainlit display
+├── order_export.py            # Export order results to XLSX (openpyxl) or PDF (reportlab)
 ├── decision_memory.py         # Long-term memory: record decisions, evaluate outcomes
 ├── inventory_agent.py         # Inventory analysis agent + CLI (no LLM required)
 ├── inventory_server.py        # FastMCP server — inventory agent as MCP tools (port 8004)
@@ -619,8 +683,8 @@ The app ships as a `linux/amd64` Docker image. Data files are mounted as a volum
 
 ### Build & export (on your laptop)
 ```bash
-docker build --platform linux/amd64 -t cigar-shoppe-ai:0.9 .
-docker save cigar-shoppe-ai:0.9 | gzip > cigar-shoppe-ai-0.9.tar.gz
+docker build --platform linux/amd64 -t cigar-shoppe-ai:0.10 .
+docker save cigar-shoppe-ai:0.10 | gzip > cigar-shoppe-ai-0.9.tar.gz
 ```
 
 ### Transfer to NAS

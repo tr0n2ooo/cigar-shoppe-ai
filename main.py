@@ -34,6 +34,10 @@ main.py — convenience launcher
   python main.py order --craziness 7           → more adventurous branching (default 5)
   python main.py order --max-price 22          → filter out cigars above $22/stick
   python main.py order --json                  → output raw JSON
+  python main.py order --export xlsx           → export to exports/order_YYYY-MM-DD.xlsx
+  python main.py order --export pdf            → export to exports/order_YYYY-MM-DD.pdf
+  python main.py order --export both           → export both formats
+  python main.py order --export xlsx --export-path /tmp/order.xlsx  → explicit path
 
   python main.py inventory-server      → start the inventory agent MCP server (stdio, port 8004)
   python main.py inventory-server --transport sse --port 8004
