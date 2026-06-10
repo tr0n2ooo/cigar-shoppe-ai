@@ -46,6 +46,51 @@ from tools.inventory_tool import run_inventory_sql, run_shop_sql_df
 from social_intel_agent import get_buzz_feed, DEFAULT_FIT_PROFILE, _craziness_guidance, BUZZ_FILE
 from cigar_researcher import _create_with_backoff
 from inventory_agent import analyze_reorder
+from decision_memory import record_recommendation, load_feedback_summary
+
+# ── Verbose / demo mode ───────────────────────────────────────────────────────
+import time as _time_mod
+
+_verbose_cb: Any = None      # callable(phase, msg, data) → None; set by set_verbose_callback()
+_verbose_events: list[dict] = []
+_verbose_t0: float = 0.0
+
+_PHASE_ICONS = {
+    "memory":     "🧠",
+    "candidates": "📋",
+    "branch":     "🌿",
+    "synthesis":  "⚖️ ",
+    "record":     "💾",
+    "rag":        "🔍",
+}
+
+
+def set_verbose_callback(fn) -> None:
+    """Register a callable(phase, msg, data) invoked at each key step during a run.
+
+    Use this to stream narration to a CLI, UI, or demo harness.  The callback
+    receives three arguments:
+        phase (str)  — one of 'memory', 'candidates', 'branch', 'synthesis', 'record'
+        msg   (str)  — one-line human-readable description of what's happening
+        data  (dict) — optional structured detail (e.g. list of candidate names)
+    """
+    global _verbose_cb
+    _verbose_cb = fn
+
+
+def _verbose(phase: str, msg: str, **data) -> None:
+    """Emit a verbose event to the registered callback and the in-memory event log."""
+    global _verbose_t0
+    if _verbose_t0 == 0.0:
+        _verbose_t0 = _time_mod.time()
+    event = {"phase": phase, "msg": msg, "elapsed": round(_time_mod.time() - _verbose_t0, 1)}
+    event.update(data)
+    _verbose_events.append(event)
+    if _verbose_cb:
+        try:
+            _verbose_cb(phase, msg, dict(data))
+        except Exception:
+            pass
 
 INVENTORY_FILE = Path(__file__).parent / "data" / "Smoke_Shoppe_Inventory_Verified.xlsx"
 
@@ -969,6 +1014,10 @@ class OrderingAgent:
             strategy_description=strategy["description"],
         )
 
+        _verbose("branch",
+                 f"Starting {branch_key.upper()} branch — {strategy['description'][:80]}…",
+                 branch=branch_key, evaluating=len(candidates), slots=slots)
+
         # Build candidate summary for the prompt
         candidate_lines = []
         for i, c in enumerate(candidates, 1):
@@ -1065,6 +1114,16 @@ class OrderingAgent:
             logging.warning("Branch %s returned no JSON", branch_key)
             result_json = {"branch": strategy["name"], "selections": []}
 
+        selections = result_json.get("selections", [])
+        sel_names = [
+            f"{s.get('name','?')} [{s.get('confidence','?')} confidence]"
+            for s in selections
+        ]
+        _verbose("branch",
+                 f"{branch_key.upper()} branch complete — {len(selections)} selection(s).",
+                 branch=branch_key, selected=sel_names or ["(none)"],
+                 rationale=(result_json.get("strategy_rationale") or "")[:120])
+
         return result_json
 
     # ── synthesis ─────────────────────────────────────────────────────────────
@@ -1076,6 +1135,7 @@ class OrderingAgent:
         candidates: list[dict],
         order_budget: float | None = None,
         seasonal_context: str | None = None,
+        past_feedback: str = "",
     ) -> dict:
         """Combine three branch recommendations into a final order recommendation."""
         branch_summaries = []
@@ -1112,17 +1172,35 @@ class OrderingAgent:
             if seasonal_context else ""
         )
 
+        feedback_section = (
+            f"\n\n{past_feedback}\n"
+            "→ Avoid re-recommending cigars that previously showed poor sales performance. "
+            "Favour cigars similar to past good sellers.\n"
+            if past_feedback else ""
+        )
+
         user_message = (
             "\n\n".join(branch_summaries)
             + f"\n\nFULL CANDIDATE LIST (for your 'not_recommended' section):\n"
             + "\n".join(f"  - {n}" for n in all_names)
             + budget_line
             + seasonal_line
+            + feedback_section
             + f"\nTASK: Synthesize the above branches into a final order recommendation "
             f"of {slots} cigar(s). Include vitola, box_size, boxes, msrp_per_stick, "
             f"and cost_estimate for each item. Compute total_order_cost. "
             "Output ONLY the JSON — start with { and end with }."
         )
+
+        branch_picks = {
+            k: [s.get("name", "?") for s in v.get("selections", [])]
+            for k, v in branches.items()
+        }
+        _verbose("synthesis",
+                 f"Synthesizing {len(branches)} branches into final recommendation "
+                 f"({'with' if past_feedback else 'without'} long-term memory feedback).",
+                 branch_picks=branch_picks, memory_injected=bool(past_feedback),
+                 slots_requested=slots)
 
         messages = [{"role": "user", "content": user_message}]
         result_json: dict = {}
@@ -1206,6 +1284,11 @@ class OrderingAgent:
         new_cigar_pct = max(0.0, min(100.0, new_cigar_pct))
         horizon_days  = max(1, horizon_days)
 
+        # Reset verbose event log for this run
+        global _verbose_events, _verbose_t0
+        _verbose_events = []
+        _verbose_t0 = _time_mod.time()
+
         # ── Default budget: $5,000/month scaled to horizon ────────────────────
         if order_budget is None:
             order_budget = round(DEFAULT_MONTHLY_BUDGET * horizon_days / 30, 2)
@@ -1224,6 +1307,20 @@ class OrderingAgent:
             f"{order_budget:,.0f}", new_cigar_pct, f"{new_cigar_budget:,.0f}",
             100 - new_cigar_pct, f"{restock_budget:,.0f}", horizon_days,
         )
+
+        # ── Long-term memory: load feedback from past decisions ───────────────
+        logging.info("Loading long-term memory feedback from past order decisions…")
+        _verbose("memory", "Loading past order decisions from long-term memory…",
+                 file="data/Order_History.json")
+        past_feedback = load_feedback_summary()
+        if past_feedback:
+            logging.info("Past decision feedback loaded (%d chars).", len(past_feedback))
+            preview_lines = [ln for ln in past_feedback.splitlines() if ln.strip().startswith("•")]
+            _verbose("memory",
+                     f"Found past decisions — performance feedback injected into synthesis.",
+                     feedback_preview=preview_lines[:4] or ["(see order history for details)"])
+        else:
+            _verbose("memory", "No past decisions found — this is the first run.")
 
         # ── Seasonality context ───────────────────────────────────────────────
         logging.info("Computing horizon seasonality (%d days)…", horizon_days)
@@ -1377,6 +1474,20 @@ class OrderingAgent:
                 "recommendation": None,
             }
 
+        top3 = [
+            f"{c.get('Name') or c.get('name','?')} "
+            f"(buzz={c.get('Buzz Score') or c.get('buzz_score','?')})"
+            for c in sorted(
+                candidates,
+                key=lambda c: c.get("Buzz Score") or c.get("buzz_score") or 0,
+                reverse=True,
+            )[:3]
+        ]
+        _verbose("candidates",
+                 f"{len(candidates)} candidates ready for evaluation "
+                 f"(pool={candidate_pool}, already-in-stock filtered out).",
+                 top_by_buzz=top3)
+
         # 3. Enrich with fit profiles (filter by per-stick price cap if set)
         logging.info("Enriching %d candidates with fit profiles…", len(candidates))
         enriched = self._enrich_with_fit(candidates, max_price_per_stick, xlsx_path)
@@ -1415,13 +1526,26 @@ class OrderingAgent:
                 seasonal_context=seasonal_context,
             )
 
-        # 5. Synthesize
+        # 5. Synthesize (with long-term memory feedback injected)
         logging.info("Synthesizing branches…")
         recommendation = self._synthesize(
             branches, slots, enriched,
             order_budget=tot_budget,
             seasonal_context=seasonal_context,
+            past_feedback=past_feedback,
         )
+
+        final_picks = [
+            f"{o.get('name','?')} — {o.get('vitola','?')} "
+            f"[{o.get('conviction','?')} conviction, "
+            f"agreed by: {', '.join(o.get('branches_agreed', []))}]"
+            for o in recommendation.get("recommended_orders", [])
+        ]
+        _verbose("synthesis",
+                 f"Synthesis complete — {len(final_picks)} cigar(s) recommended.",
+                 final_picks=final_picks or ["(none)"],
+                 strategy=recommendation.get("ordering_strategy", "?"),
+                 consensus=recommendation.get("branch_consensus", "")[:120])
 
         import time
         buzz_age_days = (
@@ -1434,7 +1558,7 @@ class OrderingAgent:
         tot_restock_cost = restock_section.get("total_cost_ordered") or 0
         combined_cost = round(tot_new_cost + tot_restock_cost, 2)
 
-        return {
+        result = {
             "metadata": {
                 "candidates_evaluated": len(enriched),
                 "already_in_stock_filtered": len(full_keys) > 0,
@@ -1465,6 +1589,22 @@ class OrderingAgent:
                 recommendation.get("recommended_orders", []),
             ),
         }
+
+        # ── Long-term memory: persist this decision for future evaluations ────
+        try:
+            record_recommendation(result)
+            _verbose("record",
+                     "Recommendation saved to long-term memory (data/Order_History.json). "
+                     "Future runs will compare these picks against actual sales.",
+                     saved_cigars=[
+                         o.get("name", "?")
+                         for o in result.get("recommendation", {}).get("recommended_orders", [])
+                     ])
+        except Exception as exc:
+            logging.warning("Could not record recommendation to long-term memory: %s", exc)
+
+        result["_verbose_events"] = list(_verbose_events)
+        return result
 
 
 # ── public API ────────────────────────────────────────────────────────────────
@@ -1889,7 +2029,38 @@ if __name__ == "__main__":
                              "Overrides --new-cigar-pct when set (budget must also be specified).")
     parser.add_argument("--max-price",    type=float, default=None, help="Max MSRP per stick to consider (filters candidates)")
     parser.add_argument("--json",         action="store_true", help="Output raw JSON instead of pretty-print")
+    parser.add_argument("--verbose",      action="store_true",
+                        help="Print a behind-the-scenes narrative as the agent works "
+                             "(great for demos — shows ReAct loop, ToT branches, memory, and RAG)")
     args = parser.parse_args()
+
+    # ── Verbose / demo mode callback ─────────────────────────────────────────
+    if args.verbose:
+        _demo_start = _time_mod.time()
+        _ICONS = {
+            "memory": "🧠", "candidates": "📋", "branch": "🌿",
+            "synthesis": "⚖️ ", "record": "💾", "rag": "🔍",
+        }
+
+        def _demo_printer(phase: str, msg: str, data: dict) -> None:
+            elapsed = _time_mod.time() - _demo_start
+            icon = _ICONS.get(phase, "→")
+            label = phase.upper().replace("_", " ")
+            print(f"\n{icon}  [{label}]  +{elapsed:.1f}s", flush=True)
+            print(f"   {msg}", flush=True)
+            for k, v in (data or {}).items():
+                if isinstance(v, list):
+                    for item in v[:5]:
+                        print(f"      • {item}", flush=True)
+                elif v:
+                    print(f"   {k}: {v}", flush=True)
+
+        set_verbose_callback(_demo_printer)
+        print("\n" + "═" * 70)
+        print("  🎓  DEMO MODE — BEHIND THE SCENES")
+        print("  Narrating each agentic step as it happens.")
+        print("  ReAct loop │ Tree of Thought │ Long-term Memory │ RAG")
+        print("═" * 70, flush=True)
 
     # Resolve new_cigar_pct from either form
     effective_budget = args.budget  # None → auto-computed inside generate_order_recommendation
@@ -1910,6 +2081,11 @@ if __name__ == "__main__":
         horizon_days=args.horizon,
         max_price_per_stick=args.max_price,
     )
+
+    if args.verbose:
+        print("\n\n" + "═" * 70)
+        print("  📋  RECOMMENDATION OUTPUT")
+        print("═" * 70, flush=True)
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))

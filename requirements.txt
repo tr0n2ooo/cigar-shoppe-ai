@@ -1,7 +1,10 @@
 anthropic>=0.40.0
+chromadb>=0.6.0
 crewai[tools]>=1.14.0
 gradio>=5.0.0
 mcp>=1.5.0
+numpy>=1.26.0
 openpyxl>=3.1.0
 praw>=7.7.0          # Reddit API — optional, for social_intel_agent community data
 requests>=2.31.0     # YouTube Data API + general HTTP (likely already installed transitively)
+sentence-transformers>=3.0.0  # BGE cross-encoder reranking (optional but recommended)

@@ -5,6 +5,8 @@ Ask anything about your shop in plain English — I'll route your question to th
 **Cigar research & reputation**
 - *What can you tell me about the AJ Fernandez Goat?*
 - *What's the blend and rating on the Padron 1964 Anniversary?*
+- *Find me cigars similar to a bold Nicaraguan maduro with chocolate notes*
+- *What cigars in our research database are medium-bodied and under $15?*
 
 **Sales & revenue**
 - *What are the top 10 brands by revenue this year?*

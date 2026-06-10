@@ -26,6 +26,7 @@ import sys
 from mcp.server.fastmcp import FastMCP
 
 from cigar_researcher import get_all_research, lookup_cigar, research_status
+from research_rag import search_similar, index_status, rebuild_index
 
 
 def build_server() -> FastMCP:
@@ -86,6 +87,44 @@ def build_server() -> FastMCP:
     )
     def research_status_tool() -> str:
         return json.dumps(research_status(), default=str, indent=2)
+
+    @mcp.tool(
+        name="search_similar_cigars",
+        description=(
+            "Semantic search over the cigar research database using RAG. "
+            "Given a natural-language query (e.g. 'medium-bodied Connecticut wrapper under $15 "
+            "with creamy notes'), returns the k most similar researched cigars. "
+            "Uses MMR (Maximal Marginal Relevance) to balance relevance with diversity — "
+            "avoids returning five nearly-identical results. "
+            "Optional BGE cross-encoder reranking applied when sentence-transformers is installed. "
+            "Parameters: query (str), k (int, default 5), mmr_lambda (float 0–1, default 0.7)."
+        ),
+    )
+    def search_similar_cigars_tool(
+        query: str,
+        k: int = 5,
+        mmr_lambda: float = 0.7,
+    ) -> str:
+        results = search_similar(query, k=k, mmr_lambda=mmr_lambda)
+        return json.dumps(results, default=str, indent=2)
+
+    @mcp.tool(
+        name="rag_index_status",
+        description="Return stats about the RAG vector index (number of indexed cigars, path).",
+    )
+    def rag_index_status_tool() -> str:
+        return json.dumps(index_status(), default=str, indent=2)
+
+    @mcp.tool(
+        name="rebuild_rag_index",
+        description=(
+            "Rebuild the ChromaDB RAG index from the latest Cigar_Research.xlsx. "
+            "Call this after running a batch research update to refresh the vector store."
+        ),
+    )
+    def rebuild_rag_index_tool() -> str:
+        n = rebuild_index()
+        return json.dumps({"indexed_cigars": n, "status": "rebuilt"})
 
     return mcp
 
