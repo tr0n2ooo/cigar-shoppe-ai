@@ -151,7 +151,8 @@ Always mention urgency tiers for reorder signals.
 Call the order recommendation tool. Summarize the strategy and lead with the highest-conviction picks.
 
 **Sales analytics** ("Top brands by revenue", "Which employee sold most?", "How did Q1 go?"):
-Call the sales query tool with the specific question.
+Call query_xlsx with the specific question. Charts are generated automatically alongside
+the text response — you do not need to call any chart tools separately.
 
 **Combined questions** ("What's low stock AND what should I discount?"):
 Call multiple tools — one per analysis — then synthesize a single coherent response.
@@ -187,6 +188,7 @@ def _run_tool(tool_name: str, inputs: dict) -> str:
 def run_dispatch(
     question: str,
     *,
+    history: list[dict] | None = None,
     on_tool_start: Any = None,
     on_tool_end: Any = None,
     on_rate_limit: Any = None,
@@ -202,6 +204,10 @@ def run_dispatch(
 
     Args:
         question:      The user's natural-language question.
+        history:       Prior conversation turns as a list of
+                       {"role": "user"|"assistant", "content": str} dicts.
+                       Only plain text turns should be included — not raw tool
+                       outputs — to keep the context window compact.
         on_tool_start: Optional callable(tool_name: str, inputs: dict) called
                        immediately before each tool runs (from a worker thread).
         on_tool_end:   Optional callable(tool_name: str, output: str) called
@@ -212,12 +218,19 @@ def run_dispatch(
     """
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
     tools = get_tools()
-    messages: list[dict] = [{"role": "user", "content": question}]
+    messages: list[dict] = list(history or []) + [{"role": "user", "content": question}]
 
     # Register the rate-limit callback on the dispatch thread (covers the
     # dispatcher's own Claude calls) and on every tool-worker thread below.
     if on_rate_limit:
         set_rate_limit_cb(on_rate_limit)
+
+    # Tools that always benefit from sales charts regardless of query content.
+    # Charts are generated automatically when any of these tools fire, without
+    # relying on the dispatcher model to decide to call chart tools separately.
+    _AUTO_CHART_TOOLS: dict[str, tuple[str, ...]] = {
+        "query_xlsx": ("get_top_brands_chart", "get_revenue_trend_chart"),
+    }
 
     def _execute_block(block) -> tuple[str, str]:
         """Run a single tool_use block and return (tool_use_id, output)."""
@@ -230,12 +243,17 @@ def run_dispatch(
         output = _run_tool(block.name, block.input)
         if on_tool_end:
             on_tool_end(block.name, output)
+            # Auto-fire companion chart tools when the UI is active.
+            # Runs in the same worker thread — chart queries are cheap DuckDB calls.
+            for chart_tool in _AUTO_CHART_TOOLS.get(block.name, ()):
+                chart_output = _run_tool(chart_tool, {})
+                on_tool_end(chart_tool, chart_output)
         return block.id, output
 
     while True:
         response = _create_with_backoff(
             client,
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=tools,

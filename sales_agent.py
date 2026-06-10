@@ -130,7 +130,7 @@ def run_query(question: str, xlsx_path: str = DEFAULT_XLSX) -> str:
     while True:
         response = _create_with_backoff(
             client,
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             tools=[SQL_TOOL_DEF, RESEARCH_TOOL_DEF],

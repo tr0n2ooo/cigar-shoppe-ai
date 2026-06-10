@@ -17,11 +17,45 @@ Run directly with Chainlit (must pass --host for LAN/public access):
 """
 
 import asyncio
+import json
 import os
 
 import chainlit as cl
 
 from dispatcher_agent import run_dispatch
+from chart_generator import make_chart
+
+
+# ── order export action callbacks ─────────────────────────────────────────────
+
+@cl.action_callback("export_xlsx")
+async def on_export_xlsx(action: cl.Action):
+    from order_export import to_xlsx
+    raw = cl.user_session.get("last_order_result")
+    if not raw:
+        await cl.Message(content="No order result in this session — run an order recommendation first.").send()
+        return
+    result = json.loads(raw)
+    path = to_xlsx(result)
+    await cl.Message(
+        content="Your order recommendation as an Excel spreadsheet:",
+        elements=[cl.File(name=path.name, path=str(path), display="inline")],
+    ).send()
+
+
+@cl.action_callback("export_pdf")
+async def on_export_pdf(action: cl.Action):
+    from order_export import to_pdf
+    raw = cl.user_session.get("last_order_result")
+    if not raw:
+        await cl.Message(content="No order result in this session — run an order recommendation first.").send()
+        return
+    result = json.loads(raw)
+    path = to_pdf(result)
+    await cl.Message(
+        content="Your order recommendation as a PDF purchase order:",
+        elements=[cl.File(name=path.name, path=str(path), display="inline")],
+    ).send()
 
 
 @cl.password_auth_callback
@@ -86,8 +120,12 @@ Ask anything about your shop in plain English. I'll route your question to the r
 """
 
 
+_MAX_HISTORY_TURNS = 20  # max user+assistant pairs kept in context (40 messages)
+
+
 @cl.on_chat_start
 async def on_chat_start():
+    cl.user_session.set("history", [])
     await cl.Message(content=WELCOME).send()
 
 
@@ -115,10 +153,17 @@ async def on_message(message: cl.Message):
     event_queue: asyncio.Queue = asyncio.Queue()
 
     # ── event types ──────────────────────────────────────────────────────────
-    # ("start",      tool_name)
-    # ("end",        tool_name, output_snippet)
-    # ("rate_limit", wait_secs, attempt)
+    # ("start",        tool_name)
+    # ("end",          tool_name, output_snippet)
+    # ("chart",        figure_or_list)
+    # ("order_result", raw_json_str)
+    # ("rate_limit",   wait_secs, attempt)
     # (None,)  — sentinel: stop the updater
+
+    # Figures and order result collected during dispatch — attached to the
+    # final answer message so everything appears in-context together.
+    pending_figures: list = []
+    pending_order_json: list[str] = []  # at most one element
 
     # ── async UI updater ─────────────────────────────────────────────────────
     async def ui_updater() -> None:
@@ -146,6 +191,15 @@ async def on_message(message: cl.Message):
                     step.output = snippet
                     await step.update()
 
+            elif event[0] == "chart":
+                _, fig_or_list = event
+                figs = fig_or_list if isinstance(fig_or_list, list) else [fig_or_list]
+                pending_figures.extend(figs)
+
+            elif event[0] == "order_result":
+                _, raw = event
+                pending_order_json[:] = [raw]  # keep only the most recent
+
             elif event[0] == "rate_limit":
                 _, wait_secs, attempt = event
                 step = cl.Step(
@@ -167,6 +221,13 @@ async def on_message(message: cl.Message):
     def on_tool_end(tool_name: str, output: str) -> None:
         snippet = (output[:300] + "…") if len(output) > 300 else output
         loop.call_soon_threadsafe(event_queue.put_nowait, ("end", tool_name, snippet))
+        # Generate chart from structured tool output when available
+        fig = make_chart(tool_name, output)
+        if fig is not None:
+            loop.call_soon_threadsafe(event_queue.put_nowait, ("chart", fig))
+        # Stash order result so export buttons can be attached to the answer
+        if tool_name == "generate_order_recommendation":
+            loop.call_soon_threadsafe(event_queue.put_nowait, ("order_result", output))
 
     def on_rate_limit(wait_secs: int, attempt: int) -> None:
         loop.call_soon_threadsafe(event_queue.put_nowait, ("rate_limit", wait_secs, attempt))
@@ -174,9 +235,12 @@ async def on_message(message: cl.Message):
     # ── kick off both tasks ───────────────────────────────────────────────────
     updater_task = asyncio.create_task(ui_updater())
 
+    history: list[dict] = cl.user_session.get("history") or []
+
     try:
         answer = await cl.make_async(run_dispatch)(
             message.content,
+            history=history,
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
             on_rate_limit=on_rate_limit,
@@ -188,4 +252,35 @@ async def on_message(message: cl.Message):
         loop.call_soon_threadsafe(event_queue.put_nowait, (None,))
         await updater_task
 
-    await cl.Message(content=answer).send()
+    elements = [
+        cl.Plotly(figure=fig, display="inline", size="large")
+        for fig in pending_figures
+    ]
+
+    actions = []
+    if pending_order_json:
+        cl.user_session.set("last_order_result", pending_order_json[0])
+        actions = [
+            cl.Action(
+                name="export_xlsx",
+                label="📊 Export XLSX",
+                payload={},
+                tooltip="Download order recommendation as an Excel spreadsheet",
+            ),
+            cl.Action(
+                name="export_pdf",
+                label="📄 Export PDF",
+                payload={},
+                tooltip="Download order recommendation as a PDF purchase order",
+            ),
+        ]
+
+    await cl.Message(content=answer, elements=elements, actions=actions).send()
+
+    # Append this turn to history (plain text only — no raw tool outputs)
+    history.append({"role": "user",      "content": message.content})
+    history.append({"role": "assistant", "content": answer})
+    # Trim to the most recent N turns to bound context growth
+    if len(history) > _MAX_HISTORY_TURNS * 2:
+        history = history[-(_MAX_HISTORY_TURNS * 2):]
+    cl.user_session.set("history", history)

@@ -263,11 +263,14 @@ overall_score = round(0.40 * quality + 0.35 * community + 0.25 * value)
   If community_score is null: round(0.65 * quality + 0.35 * value) or just quality_score.
   null if quality_score is also null.
 
-top_quotes — 2-3 brief representative quotes, pipe-separated, with source:
+top_quotes — 2-3 verbatim quotes found in actual search results, pipe-separated, each attributed to its source URL or publication:
   Example: '"Consistently excellent, an easy Buy a Box" — Halfwheel | "Best everyday smoke under $15" — r/cigars'
+  HALLUCINATION RULE: Every quote must be text you found verbatim in a search result during THIS session. Never paraphrase, reconstruct, or invent a quote. If you do not have at least one real verbatim quote from a search result, output null. Do not write a plausible-sounding quote from model memory.
 
 source_breakdown — a JSON-encoded string, e.g.:
   '{"halfwheel": {"score": 92, "verdict": "Buy a Box"}, "cigar_aficionado": {"score": 88}, "reddit": {"post_count": 12, "avg_upvote_ratio": 0.95}}'
+
+source_urls — REQUIRED: include at least one URL per non-null score field. If you cannot supply a URL confirming a score, set that score to null instead.
 
 OUTPUT — return ONLY this JSON object, no markdown fences, no extra text:
 {
@@ -330,6 +333,8 @@ RELEASE STATUS:
   "announced" : officially announced, not yet shipping
   "limited"   : shipping but very limited availability
   "released"  : widely available at retail
+
+HALLUCINATION RULE: Every cigar you list must appear in an actual search result you retrieved during THIS session. Do not include cigars from model memory that were not found in a search result. The summary field must describe only what search results actually said — do not invent reception or community reactions. source_urls must contain at least one URL confirming the cigar exists and was announced/released in 2025-2026.
 
 Return ONLY the JSON array — start with [ and end with ], no markdown, no prose:
 [

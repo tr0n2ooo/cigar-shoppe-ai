@@ -1086,7 +1086,7 @@ class OrderingAgent:
             response = _create_with_backoff(
                 self.client,
                 model=self.model,
-                max_tokens=3000,
+                max_tokens=1500,
                 system=system,
                 messages=messages,
             )
@@ -1510,21 +1510,32 @@ class OrderingAgent:
             branch_crazy["conservative"], branch_crazy["balanced"], branch_crazy["adventurous"],
         )
 
-        # 4. Run three branches (with new-cigar budget slice, not the full budget)
+        # 4. Run three branches in parallel (with new-cigar budget slice, not the full budget)
         # When new_cigar_pct < 100, only the new-cigar slice is passed so the
         # synthesis doesn't over-allocate into the restock share.
         tot_budget = new_cigar_budget if order_budget is not None else None
 
-        branches: dict[str, dict] = {}
-        for branch_key in ("conservative", "balanced", "adventurous"):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_branch(branch_key: str) -> tuple[str, dict]:
             logging.info("  Evaluating %s branch…", branch_key)
-            branches[branch_key] = self._evaluate_branch(
+            return branch_key, self._evaluate_branch(
                 branch_key=branch_key,
                 candidates=enriched,
                 slots=slots,
                 order_budget=tot_budget,
                 seasonal_context=seasonal_context,
             )
+
+        branches: dict[str, dict] = {}
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(_run_branch, key): key
+                for key in ("conservative", "balanced", "adventurous")
+            }
+            for future in as_completed(futures):
+                key, result = future.result()
+                branches[key] = result
 
         # 5. Synthesize (with long-term memory feedback injected)
         logging.info("Synthesizing branches…")
@@ -1552,6 +1563,14 @@ class OrderingAgent:
             round((time.time() - BUZZ_FILE.stat().st_mtime) / 86_400, 1)
             if BUZZ_FILE.exists() else None
         )
+
+        # ── MSRP sanity check ─────────────────────────────────────────────────
+        # Compare each recommended MSRP against comparable inventory selling prices.
+        # Flag as low-confidence if >2× or <0.5× the median of similar items.
+        try:
+            _msrp_sanity_check(recommendation.get("recommended_orders", []))
+        except Exception as exc:
+            logging.warning("MSRP sanity check failed (non-fatal): %s", exc)
 
         # Combined order cost (new cigars + restock)
         tot_new_cost = recommendation.get("total_order_cost") or 0
@@ -1605,6 +1624,77 @@ class OrderingAgent:
 
         result["_verbose_events"] = list(_verbose_events)
         return result
+
+
+# ── MSRP sanity check ────────────────────────────────────────────────────────
+
+def _msrp_sanity_check(orders: list[dict]) -> None:
+    """
+    Cross-check each recommended MSRP against comparable items already in inventory.
+    Mutates each order dict in-place: adds 'msrp_confidence' key.
+
+    Logic:
+      - Query DuckDB for all cigars currently in inventory with a known Selling Price.
+      - For each recommendation, find inventory items with a matching brand OR matching
+        vitola (shape); fall back to the full inventory if neither yields enough rows.
+      - Compare recommended msrp_per_stick to the comparable median.
+      - Flag as "low" if the recommendation is >2× or <0.5× the comparable median.
+      - Flag as "high" otherwise (i.e. within the expected range).
+    """
+    if not orders:
+        return
+
+    # Fetch all inventory selling prices in one shot
+    try:
+        price_df = run_shop_sql_df(
+            """
+            SELECT Brand, "Selling Price"
+            FROM inventory
+            WHERE Category = 'Cigars'
+              AND "Selling Price" IS NOT NULL
+              AND "Selling Price" > 0
+            """
+        )
+    except Exception:
+        return
+
+    if price_df.empty:
+        return
+
+    price_df["Selling Price"] = price_df["Selling Price"].astype(float)
+    all_prices = sorted(price_df["Selling Price"].tolist())
+    global_median = all_prices[len(all_prices) // 2]
+
+    for order in orders:
+        msrp = order.get("msrp_per_stick")
+        if not isinstance(msrp, (int, float)) or msrp <= 0:
+            order.setdefault("msrp_confidence", "unknown")
+            continue
+
+        brand = (order.get("brand") or "").strip().lower()
+
+        # 1. Try same-brand items from our inventory
+        brand_prices = price_df[price_df["Brand"].str.lower().str.strip() == brand]["Selling Price"].tolist()
+
+        # 2. Fall back to full inventory median
+        if len(brand_prices) >= 3:
+            comparable = sorted(brand_prices)
+            scope = f"brand '{order.get('brand')}' inventory"
+        else:
+            comparable = all_prices
+            scope = "full cigar inventory"
+
+        median = comparable[len(comparable) // 2]
+        ratio = msrp / median if median > 0 else 1.0
+
+        if ratio > 2.0 or ratio < 0.5:
+            order["msrp_confidence"] = "low"
+            order["msrp_confidence_note"] = (
+                f"Suggested MSRP ${msrp:.2f} is {ratio:.1f}× the {scope} median "
+                f"(${median:.2f}). Verify pricing before ordering."
+            )
+        else:
+            order["msrp_confidence"] = "high"
 
 
 # ── public API ────────────────────────────────────────────────────────────────
@@ -1850,6 +1940,8 @@ def _print_recommendation(result: dict) -> None:
             print(f"     Order: {boxes} box(es) × {box_size} sticks/box"
                   + msrp_str + cost_str)
             print(f"     {o.get('rationale', '')}")
+            if o.get("msrp_confidence") == "low":
+                print(f"     ⚠ MSRP SANITY: {o.get('msrp_confidence_note', 'Unusual price — verify before ordering.')}")
             if o.get("watch_out_for"):
                 print(f"     ⚠ {o['watch_out_for']}")
 
@@ -2032,6 +2124,12 @@ if __name__ == "__main__":
     parser.add_argument("--verbose",      action="store_true",
                         help="Print a behind-the-scenes narrative as the agent works "
                              "(great for demos — shows ReAct loop, ToT branches, memory, and RAG)")
+    parser.add_argument("--export",       choices=["xlsx", "pdf", "both"], default=None,
+                        help="Export recommendation to a file: xlsx, pdf, or both. "
+                             "Saved to ./exports/ by default (override with --export-path).")
+    parser.add_argument("--export-path",  default=None,
+                        help="Output file path or directory for --export "
+                             "(default: ./exports/order_YYYY-MM-DD.{xlsx,pdf})")
     args = parser.parse_args()
 
     # ── Verbose / demo mode callback ─────────────────────────────────────────
@@ -2091,3 +2189,23 @@ if __name__ == "__main__":
         print(json.dumps(result, indent=2, default=str))
     else:
         _print_recommendation(result)
+
+    # ── Export ────────────────────────────────────────────────────────────────
+    if args.export:
+        from order_export import to_xlsx, to_pdf
+        export_fmt  = args.export
+        export_path = args.export_path
+
+        if export_fmt in ("xlsx", "both"):
+            try:
+                xlsx_path = to_xlsx(result, export_path)
+                print(f"\n📊  XLSX saved → {xlsx_path}")
+            except Exception as exc:
+                print(f"\n⚠  XLSX export failed: {exc}")
+
+        if export_fmt in ("pdf", "both"):
+            try:
+                pdf_path = to_pdf(result, export_path)
+                print(f"\n📄  PDF saved  → {pdf_path}")
+            except Exception as exc:
+                print(f"\n⚠  PDF export failed: {exc}")

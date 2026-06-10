@@ -794,7 +794,7 @@ def summarize_with_claude(analysis_result: dict) -> str:
 
     response = _create_with_backoff(
         client,
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=600,
         system=_SUMMARIZE_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
