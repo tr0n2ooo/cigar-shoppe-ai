@@ -7,6 +7,10 @@ WORKDIR /app
 
 # Copy lockfile first so dependency layer is cached separately from source
 COPY pyproject.toml uv.lock ./
+
+# Force CPU-only PyTorch — sentence-transformers otherwise pulls ~2.5 GB of
+# NVIDIA CUDA wheels that are useless on a Mac/NAS deployment.
+ENV UV_TORCH_BACKEND=cpu
 RUN uv sync --frozen --no-dev
 
 # Copy application source

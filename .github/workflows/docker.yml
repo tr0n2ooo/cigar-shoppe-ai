@@ -1,0 +1,52 @@
+name: Build and push Docker image
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on version tags: v0.10, v1.0, etc.
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write  # needed to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            # v0.10.0 → 0.10.0
+            type=semver,pattern={{version}}
+            # v0.10.0 → 0.10
+            type=semver,pattern={{major}}.{{minor}}
+            # always update :latest on a tag push
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache layers in GitHub Actions cache — speeds up rebuilds significantly
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
