@@ -26,6 +26,7 @@ from mcp.server.fastmcp import FastMCP
 
 from sales_agent import DEFAULT_XLSX, run_query, analyze_sales_fit
 from tools.sql_tool import SqlQueryTool
+from tools.inventory_tool import run_shop_sql_df
 
 
 def build_server(xlsx_path: str = DEFAULT_XLSX) -> FastMCP:
@@ -94,6 +95,93 @@ def build_server(xlsx_path: str = DEFAULT_XLSX) -> FastMCP:
             xlsx_path=xlsx_path,
         )
         return json.dumps(result, default=str, indent=2)
+
+    @mcp.tool(
+        name="get_top_brands_chart",
+        description=(
+            "Return top-selling brands by YTD revenue as structured chart data. "
+            "Use this when the user asks to see brand performance, top brands, or a "
+            "revenue breakdown by brand. Returns JSON with a 'rows' list ready for charting. "
+            "Parameters: limit (default 15)."
+        ),
+    )
+    def get_top_brands_chart(limit: int = 15) -> str:
+        from datetime import date
+        year = date.today().year
+        sql = f"""
+        SELECT
+            i.Brand                                   AS brand,
+            COALESCE(SUM(t.Quantity), 0)              AS units,
+            ROUND(COALESCE(SUM(t."Item Amount"), 0), 2) AS revenue,
+            ROUND(COALESCE(AVG(i."Selling Price"), 0), 2) AS avg_price
+        FROM transactions t
+        JOIN inventory i ON t."Item Number" = i."Item Number"
+        WHERE EXTRACT(YEAR FROM t."Date") = {year}
+          AND i.Category = 'Cigars'
+          AND i.Brand IS NOT NULL
+          AND i.Brand != ''
+        GROUP BY i.Brand
+        ORDER BY revenue DESC
+        LIMIT {limit}
+        """
+        try:
+            df = run_shop_sql_df(sql, tx_path=xlsx_path)
+            rows = [
+                {
+                    "brand":     str(r["brand"]),
+                    "units":     int(r["units"]),
+                    "revenue":   float(r["revenue"]),
+                    "avg_price": float(r["avg_price"]),
+                }
+                for _, r in df.iterrows()
+            ]
+            return json.dumps({
+                "analysis": "get_top_brands_chart",
+                "period": f"YTD {year}",
+                "rows": rows,
+            })
+        except Exception as exc:
+            return json.dumps({"error": str(exc), "rows": []})
+
+    @mcp.tool(
+        name="get_revenue_trend_chart",
+        description=(
+            "Return monthly revenue and unit-sales trend as structured chart data. "
+            "Use this when the user asks about revenue over time, monthly trends, or "
+            "sales history. Returns JSON with a 'rows' list ready for charting. "
+            "Parameters: months (default 12)."
+        ),
+    )
+    def get_revenue_trend_chart(months: int = 12) -> str:
+        sql = f"""
+        SELECT
+            STRFTIME(t."Date", '%Y-%m')               AS period,
+            COALESCE(SUM(t.Quantity), 0)              AS units,
+            ROUND(COALESCE(SUM(t."Item Amount"), 0), 2) AS revenue
+        FROM transactions t
+        JOIN inventory i ON t."Item Number" = i."Item Number"
+        WHERE i.Category = 'Cigars'
+          AND t."Date" >= (CURRENT_DATE - INTERVAL '{months} months')
+        GROUP BY period
+        ORDER BY period ASC
+        """
+        try:
+            df = run_shop_sql_df(sql, tx_path=xlsx_path)
+            rows = [
+                {
+                    "period":  str(r["period"]),
+                    "units":   int(r["units"]),
+                    "revenue": float(r["revenue"]),
+                }
+                for _, r in df.iterrows()
+            ]
+            return json.dumps({
+                "analysis": "get_revenue_trend_chart",
+                "months": months,
+                "rows": rows,
+            })
+        except Exception as exc:
+            return json.dumps({"error": str(exc), "rows": []})
 
     return mcp
 

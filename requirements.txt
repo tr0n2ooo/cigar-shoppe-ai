@@ -8,3 +8,5 @@ openpyxl>=3.1.0
 praw>=7.7.0          # Reddit API — optional, for social_intel_agent community data
 requests>=2.31.0     # YouTube Data API + general HTTP (likely already installed transitively)
 sentence-transformers>=3.0.0  # BGE cross-encoder reranking (optional but recommended)
+plotly>=5.20.0                 # inline charts in the Chainlit UI (cl.Plotly)
+reportlab>=4.2.0              # PDF export for order recommendations

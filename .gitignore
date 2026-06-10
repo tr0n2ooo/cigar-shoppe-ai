@@ -24,3 +24,10 @@ data/
 # Secrets
 .env
 *.env
+env
+
+# Generated export files (XLSX/PDF order recommendations)
+exports/
+
+# Docker image tarballs
+*.tar.gz
