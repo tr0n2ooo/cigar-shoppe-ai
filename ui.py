@@ -7,9 +7,13 @@ All messages are routed through the dispatcher agent, which uses Claude to
 select and call the appropriate specialist tool(s) — sales analytics, inventory
 analysis, ordering recommendations — then synthesizes a coherent response.
 
-Run:
-    chainlit run ui.py
-    chainlit run ui.py --port 8080
+Run via main.py (recommended — sets host/port automatically):
+    python main.py ui                        # binds to 0.0.0.0:8000 (all interfaces)
+    python main.py ui --port 8080            # custom port, still all interfaces
+
+Run directly with Chainlit (must pass --host for LAN/public access):
+    chainlit run ui.py --host 0.0.0.0 --port 8000   # all interfaces
+    chainlit run ui.py                               # localhost only (127.0.0.1)
 """
 
 import asyncio
