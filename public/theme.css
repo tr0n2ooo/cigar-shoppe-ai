@@ -137,12 +137,14 @@ main {
 }
 
 /* ── Composer (input area) ────────────────────────────────────────────────── */
+
+/* Base (light mode): warm cream background, dark readable text */
 [class*="Composer"],
 [class*="composer"],
 [class*="InputBox"],
 [class*="inputBox"] {
-  background-color: #1e1610 !important;
-  border: 1px solid #3d2f1e !important;
+  background-color: #fdf4e3 !important;
+  border: 1px solid #c8902a !important;
   border-radius: 12px !important;
 }
 
@@ -150,12 +152,45 @@ main {
 [class*="composer"] textarea,
 textarea {
   background-color: transparent !important;
-  color: #f0e6d0 !important;
+  color: #1a1410 !important;
   caret-color: #c8902a !important;
 }
 
 textarea::placeholder {
   color: #9e8060 !important;
+}
+
+/* Dark mode: cedar background, parchment text.
+   html.dark — Chainlit's Tailwind dark-class toggle.
+   @media prefers-color-scheme — system dark mode fallback. */
+html.dark [class*="Composer"],
+html.dark [class*="composer"],
+html.dark [class*="InputBox"],
+html.dark [class*="inputBox"] {
+  background-color: #1e1610 !important;
+  border-color: #3d2f1e !important;
+}
+
+html.dark [class*="Composer"] textarea,
+html.dark [class*="composer"] textarea,
+html.dark textarea {
+  color: #f0e6d0 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  [class*="Composer"],
+  [class*="composer"],
+  [class*="InputBox"],
+  [class*="inputBox"] {
+    background-color: #1e1610 !important;
+    border-color: #3d2f1e !important;
+  }
+
+  [class*="Composer"] textarea,
+  [class*="composer"] textarea,
+  textarea {
+    color: #f0e6d0 !important;
+  }
 }
 
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
