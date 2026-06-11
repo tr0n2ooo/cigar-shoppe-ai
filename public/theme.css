@@ -263,3 +263,116 @@ a:hover {
 [class*="Watermark"] {
   opacity: 0.4 !important;
 }
+
+/* ── Mobile & Tablet Responsive ───────────────────────────────────────────── */
+
+/* Tables: scroll horizontally on small screens instead of overflowing */
+[class*="Message"] table {
+  display: block !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Code blocks: scroll horizontally */
+[class*="Message"] pre {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+/* Phones (≤768px) */
+@media (max-width: 768px) {
+  /* Full-width message area — override Chainlit's wide-layout side padding */
+  main,
+  [class*="MessageList"],
+  [class*="messageList"],
+  [class*="MessageContainer"],
+  [class*="messageContainer"] {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    max-width: 100% !important;
+  }
+
+  /* Prevent long strings from blowing out layout */
+  [class*="Message"],
+  [class*="message"] {
+    max-width: 100% !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+  }
+
+  /* Composer: full-width, tighter margin */
+  [class*="Composer"],
+  [class*="composer"],
+  [class*="InputBox"],
+  [class*="inputBox"] {
+    margin: 0 4px 6px !important;
+  }
+
+  /* Prevent iOS from auto-zooming when the textarea is focused */
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Minimum 44px touch targets for send button and icon buttons */
+  button[class*="submit"],
+  button[type="submit"],
+  [class*="SendButton"],
+  [class*="sendButton"] {
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  .MuiIconButton-root {
+    padding: 10px !important;
+    min-width: 44px !important;
+    min-height: 44px !important;
+  }
+
+  /* Step/tool feedback cards: tighter padding on small screens */
+  [class*="Step"],
+  [class*="step"] {
+    padding: 8px 10px !important;
+    margin: 4px 0 !important;
+  }
+
+  /* Welcome / starter area */
+  [class*="WelcomeScreen"],
+  [class*="welcomeScreen"] {
+    padding: 10px !important;
+  }
+
+  /* Starter prompt buttons: full width and stacked */
+  [class*="Starter"],
+  [class*="starter"] {
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Chips/tags: slightly smaller to fit in tight spaces */
+  .MuiChip-root {
+    font-size: 0.75rem !important;
+    height: 26px !important;
+  }
+
+  /* Ensure Plotly chart containers don't overflow */
+  [class*="plotly"],
+  .js-plotly-plot,
+  .plot-container {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+}
+
+/* Tablets (769px–1024px) */
+@media (min-width: 769px) and (max-width: 1024px) {
+  main,
+  [class*="MessageList"],
+  [class*="messageList"] {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .MuiIconButton-root {
+    padding: 8px !important;
+  }
+}
