@@ -58,16 +58,6 @@ async def on_export_pdf(action: cl.Action):
     ).send()
 
 
-@cl.password_auth_callback
-def auth_callback(username: str, password: str) -> cl.User | None:
-    """Return a User if credentials match, None to reject."""
-    expected_user = os.environ.get("UI_USERNAME", "admin")
-    expected_pass = os.environ.get("UI_PASSWORD", "")
-    if username == expected_user and password == expected_pass:
-        return cl.User(identifier=username)
-    return None
-
-
 # Override labels for tools — cigar-shop themed, shown in the animated step UI.
 # Any tool not listed here gets a clean formatted fallback.
 _TOOL_LABEL_OVERRIDES: dict[str, str] = {
@@ -91,8 +81,28 @@ def _tool_label(tool_name: str) -> str:
     return "🚬 " + tool_name.replace("_", " ").capitalize()
 
 
-WELCOME = """\
-# Smoke Shoppe AI
+CUSTOMER_WELCOME = """\
+# Welcome to Smoke Shoppe
+
+Looking for your next great smoke? Tell me what you enjoy and I'll find the perfect cigar from what we have in stock.
+
+**Find something you'll love**
+- *I like mild, creamy cigars — what would you recommend?*
+- *What's a good full-bodied cigar under $15?*
+- *I'm new to cigars — where should I start?*
+
+**Learn about specific cigars**
+- *Tell me about the Padron 1964 Anniversary series*
+- *What's the blend on the Oliva Serie V?*
+- *What do people think of the AJ Fernandez Enclave?*
+
+**See what we carry**
+- *Do you have any Davidoff in stock?*
+- *What sizes do you carry of the Arturo Fuente Hemingway?*
+"""
+
+MANAGER_WELCOME = """\
+# Smoke Shoppe — Store Manager
 
 Ask anything about your shop in plain English. I'll route your question to the right analysis and respond with specific, actionable insights.
 
@@ -126,29 +136,61 @@ _MAX_HISTORY_TURNS = 20  # max user+assistant pairs kept in context (40 messages
 @cl.on_chat_start
 async def on_chat_start():
     cl.user_session.set("history", [])
-    await cl.Message(content=WELCOME).send()
+    cl.user_session.set("is_manager", False)
+    await cl.Message(content=CUSTOMER_WELCOME).send()
+
+
+async def _handle_manager_login() -> None:
+    """Prompt for credentials and upgrade the session to manager mode if valid."""
+    username_msg = await cl.AskUserMessage(
+        content="**Store Manager Login**\n\nUsername:",
+        timeout=60,
+    ).send()
+    if not username_msg:
+        await cl.Message(content="Login timed out.").send()
+        return
+
+    password_msg = await cl.AskUserMessage(
+        content="Password:",
+        timeout=60,
+    ).send()
+    if not password_msg:
+        await cl.Message(content="Login timed out.").send()
+        return
+
+    expected_user = os.environ.get("UI_USERNAME", "admin")
+    expected_pass = os.environ.get("UI_PASSWORD", "")
+
+    if username_msg["output"] == expected_user and password_msg["output"] == expected_pass:
+        cl.user_session.set("is_manager", True)
+        cl.user_session.set("history", [])
+        await cl.Message(content=MANAGER_WELCOME).send()
+    else:
+        await cl.Message(content="Invalid credentials. Type `/manager` to try again.").send()
 
 
 @cl.on_message
 async def on_message(message: cl.Message):
-    """
-    Handle a user message with live, per-tool step feedback.
+    """Handle a user message — routes to customer or manager dispatcher based on session role."""
+    content = message.content.strip()
 
-    Architecture
-    ============
-    run_dispatch() is synchronous and runs in a ThreadPoolExecutor via
-    cl.make_async().  Its on_tool_start / on_tool_end callbacks are invoked
-    from that worker thread.
+    # ── /manager: upgrade to store manager mode ───────────────────────────────
+    if content.lower() == "/manager":
+        if cl.user_session.get("is_manager", False):
+            await cl.Message(
+                content="You're already in Store Manager mode. Type `/customer` to return to the customer view."
+            ).send()
+        else:
+            await _handle_manager_login()
+        return
 
-    To update the Chainlit UI (which requires the asyncio event loop), the
-    callbacks post lightweight events onto an asyncio.Queue via
-    call_soon_threadsafe().  A companion async task (ui_updater) drains the
-    queue and manages cl.Step objects — which requires the Chainlit context
-    and must run on the event loop, not in the worker thread.
+    # ── /customer: return to customer view ────────────────────────────────────
+    if content.lower() == "/customer":
+        cl.user_session.set("is_manager", False)
+        cl.user_session.set("history", [])
+        await cl.Message(content=CUSTOMER_WELCOME).send()
+        return
 
-    This avoids any asyncio.run_coroutine_threadsafe / blocking-wait pattern
-    that would deadlock the event loop.
-    """
     loop = asyncio.get_event_loop()
     event_queue: asyncio.Queue = asyncio.Queue()
 
@@ -236,6 +278,7 @@ async def on_message(message: cl.Message):
     updater_task = asyncio.create_task(ui_updater())
 
     history: list[dict] = cl.user_session.get("history") or []
+    mode = "manager" if cl.user_session.get("is_manager", False) else "customer"
 
     try:
         answer = await cl.make_async(run_dispatch)(
@@ -244,6 +287,7 @@ async def on_message(message: cl.Message):
             on_tool_start=on_tool_start,
             on_tool_end=on_tool_end,
             on_rate_limit=on_rate_limit,
+            mode=mode,
         )
     except Exception as exc:
         answer = f"**Error:** {exc}"

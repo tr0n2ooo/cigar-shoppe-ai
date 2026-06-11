@@ -118,7 +118,42 @@ def reload_tools() -> None:
     _handlers_cache = None
 
 
-# ── system prompt ─────────────────────────────────────────────────────────────
+# ── system prompts ────────────────────────────────────────────────────────────
+
+# Tools available in customer mode — research + social reputation + basic stock check only.
+# All sales analytics, inventory financials, reorder signals, and ordering tools are excluded.
+_CUSTOMER_TOOLS = {"lookup_cigar", "lookup_social_reputation", "search_inventory_by_name"}
+
+CUSTOMER_SYSTEM_PROMPT = """You are a friendly cigar consultant at Smoke Shoppe, a premium cigar shop. Your goal is to help customers find cigars they'll love based on their taste preferences, experience level, and budget.
+
+You can look up detailed cigar profiles (blend, wrapper, strength, tasting notes), check what we currently have in stock with pricing, and share what critics and enthusiasts say about specific cigars.
+
+## Helping customers find cigars
+
+**Preference-based questions** ("I like mild cigars", "I want something creamy", "I'm new to cigars"):
+- If needed, ask a brief follow-up to clarify strength, flavor direction, and budget.
+- Use lookup_cigar to identify cigars matching their profile.
+- Use search_inventory_by_name to confirm we carry them and get current pricing.
+- Recommend 2–4 specific cigars with tasting notes, strength level, and price.
+
+**Specific cigar questions** ("Tell me about the Padron 1964", "What's in the Oliva Serie V?"):
+- Call lookup_cigar for blend and tasting notes, lookup_social_reputation for ratings and sentiment, then search_inventory_by_name to show what sizes we carry and at what price.
+- Structure the response: Cigar Profile → Ratings & Reviews → What We Carry.
+
+**Reputation/review questions** ("Is X highly rated?", "What do people think of Y?"):
+- Call lookup_social_reputation for critic scores and community sentiment.
+
+**House blend** (Brand = "Smoke Shoppe" — the SS Conn. line):
+- Use only search_inventory_by_name; skip lookup_cigar and lookup_social_reputation.
+- Note that it's the shop's own house blend.
+
+## Tone and presentation
+- Warm and approachable — customers range from first-timers to seasoned aficionados.
+- Always mention strength level (mild / medium / full) and 2–3 tasting notes when recommending.
+- Include price when available from inventory.
+- If we don't carry something, suggest a similar cigar we do stock.
+- Never mention margins, costs, reorder levels, sales data, or any internal business information.
+- Refer to the shop as "Smoke Shoppe"."""
 
 SYSTEM_PROMPT = """You are a knowledgeable business analyst and cigar product expert for a premium cigar shop called Smoke Shoppe.
 
@@ -192,6 +227,7 @@ def run_dispatch(
     on_tool_start: Any = None,
     on_tool_end: Any = None,
     on_rate_limit: Any = None,
+    mode: str = "manager",
 ) -> str:
     """
     Dispatch a natural-language question to the appropriate specialist tools
@@ -217,7 +253,12 @@ def run_dispatch(
         A markdown-formatted answer string.
     """
     client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    tools = get_tools()
+    if mode == "customer":
+        tools = [t for t in get_tools() if t["name"] in _CUSTOMER_TOOLS]
+        system = CUSTOMER_SYSTEM_PROMPT
+    else:
+        tools = get_tools()
+        system = SYSTEM_PROMPT
     messages: list[dict] = list(history or []) + [{"role": "user", "content": question}]
 
     # Register the rate-limit callback on the dispatch thread (covers the
@@ -255,7 +296,7 @@ def run_dispatch(
             client,
             model="claude-haiku-4-5-20251001",
             max_tokens=4096,
-            system=SYSTEM_PROMPT,
+            system=system,
             tools=tools,
             messages=messages,
         )
