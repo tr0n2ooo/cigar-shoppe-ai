@@ -25,10 +25,19 @@ except ImportError:
 
 # ── palette (matches Smoke Shoppe brand) ─────────────────────────────────────
 
-_BROWN  = "#4A2C17"
-_AMBER  = "#C8860A"
-_CREAM  = "#FFF8EE"
-_SLATE  = "#6C757D"
+_AMBER      = "#C8902A"   # aged amber — bar fills, titles
+_AMBER_LIGHT = "#E8B040"  # highlight amber — trend lines
+_BROWN      = "#4A2C17"   # deep brown — kept for data series that need contrast
+_CREAM      = "#FFF8EE"
+
+# Chart surface colours (dark theme — matches Chainlit UI)
+_BG_PAPER   = "#1e1610"   # cedar surface for chart card
+_BG_PLOT    = "#241c15"   # slightly lighter inner plot area
+_GRID       = "#3d2f1e"   # walnut grid lines
+_TEXT       = "#f0e6d0"   # aged parchment — all axis/title/legend text
+_MUTED      = "#9e8060"   # pale tobacco — annotation and secondary text
+
+_SLATE      = "#9e8060"   # vline annotations
 
 _URGENCY_COLOR = {
     "critical": "#C0392B",
@@ -44,18 +53,20 @@ _STOCK_COLOR = {
     "adequate":     "#27AE60",
 }
 
-_FONT = dict(family="Calibri, sans-serif", color="#333333", size=12)
+_FONT = dict(family="Calibri, sans-serif", color=_TEXT, size=12)
 
 
 def _base_layout(**overrides) -> dict:
     base = dict(
         font=_FONT,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor=_BG_PAPER,
+        plot_bgcolor=_BG_PLOT,
         margin=dict(l=8, r=20, t=36, b=8),
-        hoverlabel=dict(bgcolor="white", font_size=11),
-        xaxis=dict(showgrid=True, gridcolor="#EEEEEE", zeroline=False),
-        yaxis=dict(showgrid=False, automargin=True),
+        hoverlabel=dict(bgcolor="#2c2010", font_size=11, font_color=_TEXT),
+        xaxis=dict(showgrid=True, gridcolor=_GRID, zeroline=False,
+                   tickfont=dict(color=_TEXT), title_font=dict(color=_TEXT)),
+        yaxis=dict(showgrid=False, automargin=True,
+                   tickfont=dict(color=_TEXT), title_font=dict(color=_TEXT)),
     )
     base.update(overrides)
     return base
@@ -105,10 +116,10 @@ def _chart_top_profitable(data: dict) -> go.Figure | None:
     ytd_months = data.get("ytd_months", "?")
     fig.update_layout(
         **_base_layout(
-            title=dict(text=f"Top profitable SKUs — YTD ({ytd_months} months)", font=dict(size=13, color=_BROWN)),
+            title=dict(text=f"Top profitable SKUs — YTD ({ytd_months} months)", font=dict(size=13, color=_AMBER)),
             height=max(320, len(items) * 32 + 100),
             xaxis_title="YTD profit ($)",
-            xaxis=dict(showgrid=True, gridcolor="#EEEEEE", zeroline=False,
+            xaxis=dict(showgrid=True, gridcolor=_GRID, zeroline=False,
                        tickprefix="$", tickformat=",.0f"),
         )
     )
@@ -161,7 +172,7 @@ def _chart_reorder_signals(data: dict) -> go.Figure | None:
     threshold = data.get("days_threshold", 30)
     fig.update_layout(
         **_base_layout(
-            title=dict(text=f"Days of stock remaining (≤{threshold}-day window)", font=dict(size=13, color=_BROWN)),
+            title=dict(text=f"Days of stock remaining (≤{threshold}-day window)", font=dict(size=13, color=_AMBER)),
             height=max(320, len(items) * 30 + 120),
             xaxis_title="Days of stock",
         )
@@ -225,7 +236,7 @@ def _chart_slow_movers(data: dict) -> go.Figure | None:
                   annotation_text="12 mo", annotation_font_size=9)
     fig.update_layout(
         **_base_layout(
-            title=dict(text="Slow movers — months of excess stock", font=dict(size=13, color=_BROWN)),
+            title=dict(text="Slow movers — months of excess stock", font=dict(size=13, color=_AMBER)),
             height=max(320, len(items) * 30 + 100),
             xaxis_title="Months of excess stock",
         )
@@ -267,10 +278,10 @@ def _chart_discontinue(data: dict) -> go.Figure | None:
     ))
     fig.update_layout(
         **_base_layout(
-            title=dict(text="Dead stock — capital tied up in discontinue candidates", font=dict(size=13, color=_BROWN)),
+            title=dict(text="Dead stock — capital tied up in discontinue candidates", font=dict(size=13, color=_AMBER)),
             height=max(320, len(items) * 30 + 100),
             xaxis_title="Inventory value at cost ($)",
-            xaxis=dict(showgrid=True, gridcolor="#EEEEEE", zeroline=False,
+            xaxis=dict(showgrid=True, gridcolor=_GRID, zeroline=False,
                        tickprefix="$", tickformat=",.0f"),
         )
     )
@@ -311,10 +322,10 @@ def _chart_top_brands(data: dict) -> go.Figure | None:
     period = data.get("period", "YTD")
     fig.update_layout(
         **_base_layout(
-            title=dict(text=f"Top brands by revenue — {period}", font=dict(size=13, color=_BROWN)),
+            title=dict(text=f"Top brands by revenue — {period}", font=dict(size=13, color=_AMBER)),
             height=max(320, len(rows) * 32 + 100),
             xaxis_title="Revenue ($)",
-            xaxis=dict(showgrid=True, gridcolor="#EEEEEE", zeroline=False,
+            xaxis=dict(showgrid=True, gridcolor=_GRID, zeroline=False,
                        tickprefix="$", tickformat=",.0f"),
         )
     )
@@ -348,21 +359,24 @@ def _chart_revenue_trend(data: dict) -> go.Figure | None:
         x=labels, y=units,
         name="Units sold",
         mode="lines+markers",
-        line=dict(color=_BROWN, width=2),
+        line=dict(color=_AMBER_LIGHT, width=2),
         marker=dict(size=6),
     ), secondary_y=True)
 
     fig.update_layout(
         **_base_layout(
-            title=dict(text="Monthly revenue & unit trend", font=dict(size=13, color=_BROWN)),
+            title=dict(text="Monthly revenue & unit trend", font=dict(size=13, color=_AMBER)),
             height=320,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font_size=10),
             xaxis=dict(showgrid=False, tickangle=-35),
         )
     )
     fig.update_yaxes(title_text="Revenue ($)", tickprefix="$", tickformat=",.0f",
-                     secondary_y=False, showgrid=True, gridcolor="#EEEEEE")
-    fig.update_yaxes(title_text="Units sold", secondary_y=True, showgrid=False)
+                     title_font=dict(color=_TEXT), tickfont=dict(color=_TEXT),
+                     secondary_y=False, showgrid=True, gridcolor=_GRID)
+    fig.update_yaxes(title_text="Units sold",
+                     title_font=dict(color=_TEXT), tickfont=dict(color=_TEXT),
+                     secondary_y=True, showgrid=False)
     return fig
 
 
