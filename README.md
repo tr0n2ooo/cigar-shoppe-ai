@@ -1,4 +1,4 @@
-# Smoke Shoppe AI — v0.11
+# Smoke Shoppe AI — v0.12
 
 **Live at [cigar.tr0n2ooo.synology.me](https://cigar.tr0n2ooo.synology.me)**
 
@@ -6,7 +6,57 @@ A multi-agent AI analyst for the Smoke Shoppe. Ask questions about sales, invent
 
 ---
 
+## Roadmap
+
+The full backlog is tracked on GitHub at [tr0n2ooo/cigar-shoppe-ai](https://github.com/tr0n2ooo/cigar-shoppe-ai/issues) ([project board](https://github.com/users/tr0n2ooo/projects/1)). Issues are organized into four milestones:
+
+### v1.0 — Customer & Ecommerce
+Bring the AI to customers and connect it to the online store.
+- **Customer-facing recommender UI** *(completed in v0.12)* — customer chat with cigar recommendations based on flavor preferences; no authentication required
+- **WordPress/WooCommerce sync** — automated pipeline to keep product listings, stock, and pricing in sync with inventory data
+- **Role-based access** — owner / staff / read-only user tiers with per-role tool visibility
+- **Mobile-responsive UI** *(completed in v0.12)* — optimized for shop-floor use on phone and tablet
+- **REST API layer** — expose agent tools for WooCommerce plugins, mobile apps, and dashboards
+
+### v2.0 — Marketing Automation
+Turn the AI's inventory and research knowledge into automated marketing content.
+- **Cigar of the Week** — weekly WordPress blog post auto-selected from discount candidates, posted to Facebook and Instagram with long-term memory to prevent quarterly repeats
+- **Weekly email digest** — owner-facing sales and reorder summary delivered by email
+- **New arrivals social posts** — auto-generate announcements when new SKUs enter inventory
+- **Cigar pairing guide generator** — shareable content from research agent data (drinks, foods, occasions)
+- **Monthly newsletter** — customer-facing email with top sellers, new arrivals, and a brand spotlight
+
+### v3.0 — Deep Analytics
+Deepen business intelligence and enrich the owner UI.
+- **Sales forecasting** — predict 30/60/90-day demand by SKU using historical velocity and seasonality
+- **Bundle & promotion generator** — identify SKUs that co-sell and suggest bundle pricing
+- **Customer loyalty analysis** — repeat buyer patterns and brand preferences from transaction data
+- **Price optimization** — flag margin outliers and velocity-based pricing opportunities
+- **Saved/pinned queries** — one-click shortcuts for common owner workflows
+- **PDF/Excel report export** — download any agent response as a formatted report
+
+### v4.0 — Operations & Scale
+Streamline operations and enable growth beyond a single shop.
+- **Vendor reorder email drafts** — auto-compose purchase orders after reorder signal generation
+- **POS integration** — replace manual XLSX uploads with live point-of-sale data sync
+- **Automated XLSX refresh** — scheduled pull from a shared drive or Dropbox
+- **Barcode scanner inventory count** — mobile UPC scanning for physical stock checks
+- **Multi-tenant SaaS mode** — deployable for other cigar and tobacco shops
+- **Monitoring & uptime alerting** — health-check endpoint + Uptime Kuma integration
+- **Automated data backup** — scheduled backup of `data/` to a secondary storage location
+
+---
+
 ## Changelog
+
+### v0.12 (2026-06-11)
+**Customer-facing UI, mobile polish, and chart/theme fixes**
+
+- **Dual-mode UI** — the app now opens to a customer-facing recommender chat with no authentication required. Customers ask for cigar recommendations by preference, strength, or budget; the dispatcher uses only research, social reputation, and inventory stock-check tools — no financial or operational data is exposed. Type `/manager` to authenticate with existing `UI_USERNAME`/`UI_PASSWORD` credentials and switch to the full store-manager view; type `/customer` to return.
+- **Mobile-responsive CSS** — `public/theme.css` now includes phone (≤768px) and tablet (769–1024px) media queries: horizontal scroll on wide tables and code blocks, full-width message area overriding Chainlit's wide-layout padding, `font-size: 16px` on textarea to prevent iOS auto-zoom, 44px minimum touch targets on buttons, and Plotly chart containers capped at 100% width.
+- **Chart color fix** — all Plotly charts now render with legible colors on the dark theme. Previously `_FONT` used `#333333` (near-black) and titles used `_BROWN` (`#4A2C17`), both invisible on the dark `#1a1410` background. Charts now have explicit dark cedar backgrounds (`#1e1610` / `#241c15`), parchment text (`#f0e6d0`), walnut grid lines (`#3d2f1e`), and amber titles.
+- **Composer theme fix** — the text input area now uses theme-aware colors: cream background with dark text in light mode; dark cedar background with parchment text in dark mode. Scoped via `html.dark` (Chainlit's Tailwind class) and `@media (prefers-color-scheme: dark)`.
+- **`CHAINLIT_AUTH_SECRET`** is no longer required — the global Chainlit password gate has been removed. `UI_USERNAME` and `UI_PASSWORD` are still used for the inline `/manager` login.
 
 ### v0.11 (2026-06-10)
 **Inline charts in the Chainlit UI**
@@ -681,24 +731,41 @@ All servers implement the [Model Context Protocol](https://modelcontextprotocol.
 
 The app ships as a `linux/amd64` Docker image. Data files are mounted as a volume so they survive container updates.
 
-### Build & export (on your laptop)
+### CI build (recommended)
+
+Pushing a version tag triggers the GitHub Actions workflow, which builds and pushes the image to `ghcr.io` automatically:
+
 ```bash
-docker build --platform linux/amd64 -t cigar-shoppe-ai:0.10 .
-docker save cigar-shoppe-ai:0.10 | gzip > cigar-shoppe-ai-0.9.tar.gz
+git tag v0.12 && git push origin v0.12
+# → ghcr.io/tr0n2ooo/cigar-shoppe-ai:0.12 and :latest
+```
+
+Then on the NAS:
+```bash
+ssh user@nas-ip
+cd /volume1/docker/cigar-shoppe
+docker compose pull && docker compose down && docker compose up -d
+docker compose logs -f
+```
+
+### Manual build & export (offline / air-gapped)
+```bash
+docker build --platform linux/amd64 -t cigar-shoppe-ai:0.12 .
+docker save cigar-shoppe-ai:0.12 | gzip > cigar-shoppe-ai-0.12.tar.gz
 ```
 
 ### Transfer to NAS
 ```bash
-scp cigar-shoppe-ai-0.9.tar.gz user@nas-ip:/volume1/docker/cigar-shoppe/
+scp cigar-shoppe-ai-0.12.tar.gz user@nas-ip:/volume1/docker/cigar-shoppe/
 scp data/Smoke_Shoppe_Inventory_Verified.xlsx user@nas-ip:/volume1/docker/cigar-shoppe/data/
 scp data/Cigar_Research.xlsx user@nas-ip:/volume1/docker/cigar-shoppe/data/
 ```
 
-### Deploy on NAS
+### Deploy on NAS (manual image)
 ```bash
 ssh user@nas-ip
 cd /volume1/docker/cigar-shoppe
-docker load -i cigar-shoppe-ai-0.9.tar.gz
+docker load -i cigar-shoppe-ai-0.12.tar.gz
 docker compose down && docker compose up -d
 docker compose logs -f
 ```
@@ -707,9 +774,9 @@ docker compose logs -f
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 YOUTUBE_API_KEY=...          # optional
-CHAINLIT_AUTH_SECRET=...     # generate: python -c "import secrets; print(secrets.token_hex(32))"
-UI_USERNAME=cigar
-UI_PASSWORD=your-password
+UI_USERNAME=cigar            # used for /manager login in the chat UI
+UI_PASSWORD=your-password    # used for /manager login in the chat UI
+# CHAINLIT_AUTH_SECRET no longer required (global login gate removed in v0.12)
 ```
 
 ---
