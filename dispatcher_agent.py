@@ -296,7 +296,7 @@ def run_dispatch(
             client,
             model="claude-haiku-4-5-20251001",
             max_tokens=4096,
-            system=system,
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             tools=tools,
             messages=messages,
         )
