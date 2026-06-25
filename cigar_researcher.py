@@ -252,10 +252,21 @@ def _create_with_backoff(client: anthropic.Anthropic, **kwargs) -> anthropic.typ
     Fires the per-thread rate-limit callback (if set) before each sleep so the
     UI can warn the user.
     """
+    label = kwargs.pop("_label", None)
+    if label:
+        logging.info("[CLAUDE] %s", label)
     wait = 60
     for attempt in range(4):
         try:
-            return client.messages.create(**kwargs)
+            response = client.messages.create(**kwargs)
+            u = response.usage
+            created  = getattr(u, "cache_creation_input_tokens", 0) or 0
+            hit      = getattr(u, "cache_read_input_tokens", 0) or 0
+            logging.debug(
+                "tokens — uncached=%d  cache_write=%d  cache_read=%d  output=%d",
+                getattr(u, "input_tokens", 0) or 0, created, hit, u.output_tokens,
+            )
+            return response
         except anthropic.RateLimitError as exc:
             if attempt == 3:
                 raise
@@ -506,6 +517,7 @@ class CigarResearcher:
                 system=SIZE_ONLY_PROMPT,
                 tools=[TOOL_DEF],
                 messages=messages,
+                _label=f"cigar research (vitola/size only): \"{description}\" by {brand}",
             )
             messages.append({"role": "assistant", "content": response.content})
 
@@ -620,6 +632,7 @@ class CigarResearcher:
                 system=SYSTEM_PROMPT,
                 tools=[TOOL_DEF],
                 messages=messages,
+                _label=f"cigar research (full blend + web search): \"{description}\" by {brand}",
             )
             messages.append({"role": "assistant", "content": response.content})
 

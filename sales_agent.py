@@ -128,6 +128,13 @@ def run_query(question: str, xlsx_path: str = DEFAULT_XLSX) -> str:
     messages = [{"role": "user", "content": question}]
 
     while True:
+        last = messages[-1]
+        if isinstance(last.get("content"), list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in last["content"]
+        ):
+            _reason = "sales agent: interpreting SQL results"
+        else:
+            _reason = f"sales agent: planning query for \"{question[:80]}\""
         response = _create_with_backoff(
             client,
             model="claude-haiku-4-5-20251001",
@@ -135,6 +142,7 @@ def run_query(question: str, xlsx_path: str = DEFAULT_XLSX) -> str:
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             tools=[SQL_TOOL_DEF, RESEARCH_TOOL_DEF],
             messages=messages,
+            _label=_reason,
         )
 
         messages.append({"role": "assistant", "content": response.content})

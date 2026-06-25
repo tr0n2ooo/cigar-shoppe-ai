@@ -292,6 +292,13 @@ def run_dispatch(
         return block.id, output
 
     while True:
+        last = messages[-1]
+        if isinstance(last.get("content"), list) and any(
+            isinstance(b, dict) and b.get("type") == "tool_result" for b in last["content"]
+        ):
+            _reason = "synthesizing tool results into final answer"
+        else:
+            _reason = f"routing question to tools (mode={mode}): \"{question[:80]}\""
         response = _create_with_backoff(
             client,
             model="claude-haiku-4-5-20251001",
@@ -299,6 +306,7 @@ def run_dispatch(
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             tools=tools,
             messages=messages,
+            _label=_reason,
         )
 
         text_blocks = [b.text for b in response.content if b.type == "text"]
@@ -310,6 +318,20 @@ def run_dispatch(
             return "\n\n".join(text_blocks) if text_blocks else f"Unexpected stop: {response.stop_reason}"
 
         tool_blocks = [b for b in response.content if b.type == "tool_use"]
+
+        # Log dispatcher routing decision — which tools Claude selected and which
+        # server modules they belong to (illustrates cross-agent dispatch).
+        handlers = _get_handlers()
+        for blk in tool_blocks:
+            tool_obj = handlers.get(blk.name)
+            server = getattr(tool_obj, "fn", None)
+            module = getattr(server, "__module__", None) or "unknown"
+            logging.info(
+                "[DISPATCHER] routing → %s  (server: %s)  inputs: %s",
+                blk.name,
+                module,
+                ", ".join(f"{k}={repr(v)[:60]}" for k, v in (blk.input or {}).items()) or "(none)",
+            )
 
         # Run all tool calls for this response turn in parallel when there are
         # multiple — serial fallback for a single block avoids thread overhead.
