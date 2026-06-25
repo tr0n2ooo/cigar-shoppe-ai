@@ -18,9 +18,22 @@ Run directly with Chainlit (must pass --host for LAN/public access):
 
 import asyncio
 import json
+import logging
 import os
 
 import chainlit as cl
+
+# LOG_LEVEL=INFO  → dispatcher routing, ToT branches, RAG/MMR flow, agentic memory
+# LOG_LEVEL=DEBUG → all of the above + per-call token/cache stats
+_log_level = os.environ.get("LOG_LEVEL", "").upper()
+if _log_level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+    logging.getLogger().setLevel(getattr(logging, _log_level))
+    logging.basicConfig(
+        level=getattr(logging, _log_level),
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S",
+        force=True,
+    )
 
 from dispatcher_agent import run_dispatch
 from chart_generator import make_chart

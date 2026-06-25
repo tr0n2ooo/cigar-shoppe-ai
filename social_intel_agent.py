@@ -733,6 +733,7 @@ class SocialIntelAgent:
                 system=REPUTATION_SYSTEM_PROMPT,
                 tools=[_make_tool_def(max_searches)],
                 messages=messages,
+                _label=f"social reputation research: \"{description}\" by {brand} — searching pro reviews + community sentiment",
             )
             messages.append({"role": "assistant", "content": response.content})
 
@@ -907,6 +908,7 @@ class SocialIntelAgent:
                 max_tokens=8192,   # buzz feed JSON for 15+ cigars can be large
                 system=BUZZ_SYSTEM_PROMPT,
                 tools=[_make_tool_def(max_searches)],
+                _label=f"buzz feed discovery: finding {target_count} new/upcoming cigars generating online buzz (craziness={craziness})",
                 messages=messages,
             )
             messages.append({"role": "assistant", "content": response.content})

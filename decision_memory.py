@@ -89,9 +89,12 @@ def load_feedback_summary(lookback: int = 5) -> str:
     """
     history = _load_history()
     if not history:
+        log.info("[MEMORY] No past order decisions found — first run, no feedback to inject.")
         return ""
 
     recent = history[-lookback:]
+    log.info("[MEMORY] Loaded %d past recommendation run(s) from %s  (using last %d)",
+             len(history), HISTORY_FILE.name, len(recent))
     sales_index = _build_sales_index()
 
     lines: list[str] = [
@@ -127,7 +130,13 @@ def load_feedback_summary(lookback: int = 5) -> str:
             lines.append(f"  • {name} ({brand}): {outcome}")
 
     lines.append("─────────────────────────────────────────────────────────────────────────")
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    bullet_lines = [ln.strip() for ln in lines if ln.strip().startswith("•")]
+    log.info("[MEMORY] Injecting feedback into ToT synthesis prompt  (%d cigar outcomes):",
+             len(bullet_lines))
+    for bl in bullet_lines:
+        log.info("  %s", bl)
+    return result
 
 
 def history_count() -> int:

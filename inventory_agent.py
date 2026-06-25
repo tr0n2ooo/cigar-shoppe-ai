@@ -798,6 +798,7 @@ def summarize_with_claude(analysis_result: dict) -> str:
         max_tokens=600,
         system=_SUMMARIZE_SYSTEM,
         messages=[{"role": "user", "content": user_msg}],
+        _label=f"inventory interpretation: generating actionable summary for '{analysis_type}' ({flagged} items flagged)",
     )
     return response.content[0].text if response.content else ""
 

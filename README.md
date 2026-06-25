@@ -1,4 +1,4 @@
-# Smoke Shoppe AI — v0.12
+# Smoke Shoppe AI — v0.13
 
 **Live at [cigar.tr0n2ooo.synology.me](https://cigar.tr0n2ooo.synology.me)**
 
@@ -48,6 +48,19 @@ Streamline operations and enable growth beyond a single shop.
 ---
 
 ## Changelog
+
+### v0.13 (2026-06-25)
+**Prompt caching and demo/verbose terminal logging**
+
+- **Prompt caching** — `system` prompts in `dispatcher_agent.py` and `sales_agent.py` converted from plain strings to content-blocks lists with `cache_control: {"type": "ephemeral"}`, enabling Anthropic's prompt cache. Cache hits cost ~10% of normal input token price; manager mode (large tool schemas + long system prompt) comfortably exceeds the 4,096-token Haiku minimum. Per-call token and cache stats appear at `LOG_LEVEL=DEBUG`.
+
+- **Demo/verbose terminal logging** — set `LOG_LEVEL=INFO` (or `LOG_LEVEL=DEBUG`) in `.env` to activate structured terminal narration of all key agentic activity, designed for live demos and class walkthroughs:
+
+  - **Dispatcher routing** — a `[DISPATCHER]` line for every tool Claude selects, showing the tool name, the MCP server module it routes to (illustrating cross-agent dispatch), and key inputs. Distinguishes first-turn routing calls from post-tool synthesis calls.
+  - **Claude reasoning labels** — every `_create_with_backoff()` call carries a `_label` that prints immediately before the API call, explaining *why* Claude is being invoked — e.g. `"ToT branch evaluation: CONSERVATIVE strategy — selecting 3 new cigar(s) from 22 candidates"`. Covers all 9 call sites: dispatcher, sales agent, inventory agent, ordering agent (restock prioritization, branch evaluation ×3, synthesis), cigar researcher (full research, size-only), and social intel agent (reputation research, buzz feed discovery).
+  - **ToT phase narration** — `_terminal_verbose_printer` auto-wired to `ordering_agent.set_verbose_callback()` when `LOG_LEVEL` is set; streams `[ToT MEMORY]`, `[ToT CANDIDATES]`, `[ToT BRANCH]`, `[ToT SYNTHESIS]`, and `[ToT RECORD]` phase events with emoji icons and structured bullet lists of picks.
+  - **RAG pipeline trace** — `[RAG]` log lines at each stage: query string + index size, broad cosine retrieval candidate count, MMR re-ranking (λ value, relevance/diversity percentages, before/after names), and final selected cigars after BGE reranking.
+  - **Agentic memory trace** — `[MEMORY]` log lines in `decision_memory.py` when past runs are loaded (count, filename), and a bullet-by-bullet listing of the feedback being injected into the ToT synthesis prompt.
 
 ### v0.12 (2026-06-11)
 **Customer-facing UI, mobile polish, and chart/theme fixes**
@@ -736,8 +749,8 @@ The app ships as a `linux/amd64` Docker image. Data files are mounted as a volum
 Pushing a version tag triggers the GitHub Actions workflow, which builds and pushes the image to `ghcr.io` automatically:
 
 ```bash
-git tag v0.12 && git push origin v0.12
-# → ghcr.io/tr0n2ooo/cigar-shoppe-ai:0.12 and :latest
+git tag v0.13 && git push origin v0.13
+# → ghcr.io/tr0n2ooo/cigar-shoppe-ai:0.13 and :latest
 ```
 
 Then on the NAS:
@@ -750,13 +763,13 @@ docker compose logs -f
 
 ### Manual build & export (offline / air-gapped)
 ```bash
-docker build --platform linux/amd64 -t cigar-shoppe-ai:0.12 .
-docker save cigar-shoppe-ai:0.12 | gzip > cigar-shoppe-ai-0.12.tar.gz
+docker build --platform linux/amd64 -t cigar-shoppe-ai:0.13 .
+docker save cigar-shoppe-ai:0.13 | gzip > cigar-shoppe-ai-0.13.tar.gz
 ```
 
 ### Transfer to NAS
 ```bash
-scp cigar-shoppe-ai-0.12.tar.gz user@nas-ip:/volume1/docker/cigar-shoppe/
+scp cigar-shoppe-ai-0.13.tar.gz user@nas-ip:/volume1/docker/cigar-shoppe/
 scp data/Smoke_Shoppe_Inventory_Verified.xlsx user@nas-ip:/volume1/docker/cigar-shoppe/data/
 scp data/Cigar_Research.xlsx user@nas-ip:/volume1/docker/cigar-shoppe/data/
 ```
@@ -765,7 +778,7 @@ scp data/Cigar_Research.xlsx user@nas-ip:/volume1/docker/cigar-shoppe/data/
 ```bash
 ssh user@nas-ip
 cd /volume1/docker/cigar-shoppe
-docker load -i cigar-shoppe-ai-0.12.tar.gz
+docker load -i cigar-shoppe-ai-0.13.tar.gz
 docker compose down && docker compose up -d
 docker compose logs -f
 ```

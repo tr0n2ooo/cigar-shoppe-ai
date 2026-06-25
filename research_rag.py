@@ -91,6 +91,8 @@ def search_similar(
         return []
 
     fetch_n = min(count, k * 3)  # over-fetch so MMR has candidates to prune
+    log.info("[RAG] query=%r  requesting k=%d  index_size=%d  fetching %d candidates",
+             query[:80], k, count, fetch_n)
 
     raw = collection.query(
         query_texts=[query],
@@ -106,10 +108,18 @@ def search_similar(
 
     similarities = [max(0.0, 1.0 - d) for d in distances]
 
+    top_names = [m.get("Description", m.get("Brand", "?")) for m in metas[:3]]
+    log.info("[RAG] broad retrieval: %d candidates  top-3 by cosine: %s",
+             len(docs), " | ".join(top_names))
+
     # ── MMR re-ranking ────────────────────────────────────────────────────────
     if embeddings is not None and len(docs) > k:
+        log.info("[RAG] MMR re-ranking: %d candidates → %d results  lambda=%.2f"
+                 "  (relevance=%.0f%%  diversity=%.0f%%)",
+                 len(docs), k, mmr_lambda, mmr_lambda * 100, (1 - mmr_lambda) * 100)
         selected = _mmr(embeddings, similarities, k, mmr_lambda)
     else:
+        log.info("[RAG] MMR skipped (embeddings unavailable or candidates ≤ k) — using top-%d", k)
         selected = list(range(min(k, len(docs))))
 
     results = []
@@ -119,8 +129,14 @@ def search_similar(
         meta["_document"] = docs[i]
         results.append(meta)
 
+    mmr_names = [r.get("Description", r.get("Brand", "?")) for r in results]
+    log.info("[RAG] MMR selected: %s", " | ".join(mmr_names))
+
     # ── BGE cross-encoder re-ranking (optional) ───────────────────────────────
     results = _rerank(query, results)
+
+    final_names = [r.get("Description", r.get("Brand", "?")) for r in results[:k]]
+    log.info("[RAG] final results (%d): %s", len(results[:k]), " | ".join(final_names))
 
     return results[:k]
 

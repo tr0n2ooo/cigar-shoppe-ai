@@ -78,6 +78,28 @@ def set_verbose_callback(fn) -> None:
     _verbose_cb = fn
 
 
+def _terminal_verbose_printer(phase: str, msg: str, data: dict) -> None:
+    """Print ToT phase events to the terminal in a demo-friendly format."""
+    icon = _PHASE_ICONS.get(phase, "  ")
+    logging.info("[ToT %s] %s %s", phase.upper(), icon, msg)
+    if data:
+        for key, val in data.items():
+            if isinstance(val, list):
+                for item in val[:6]:
+                    logging.info("    • %s", item)
+                if len(val) > 6:
+                    logging.info("    … and %d more", len(val) - 6)
+            elif val not in (None, "", False):
+                logging.info("    %s: %s", key, val)
+
+
+# Auto-wire the terminal printer when LOG_LEVEL=DEBUG or LOG_LEVEL=INFO is set,
+# so demo output appears without any extra configuration.
+import os as _os
+if _os.environ.get("LOG_LEVEL", "").upper() in ("DEBUG", "INFO"):
+    set_verbose_callback(_terminal_verbose_printer)
+
+
 def _verbose(phase: str, msg: str, **data) -> None:
     """Emit a verbose event to the registered callback and the in-memory event log."""
     global _verbose_t0
@@ -875,6 +897,7 @@ class OrderingAgent:
                     max_tokens=8192,
                     system=_RESTOCK_PRIORITIZATION_SYSTEM,
                     messages=messages,
+                    _label=f"restock prioritization: allocating ${restock_budget:,.0f} across {len(annotated)} reorder candidates",
                 )
                 messages.append({"role": "assistant", "content": response.content})
 
@@ -1089,6 +1112,7 @@ class OrderingAgent:
                 max_tokens=1500,
                 system=system,
                 messages=messages,
+                _label=f"ToT branch evaluation: {branch_key.upper()} strategy — selecting {slots} new cigar(s) from {len(candidates)} candidates",
             )
             messages.append({"role": "assistant", "content": response.content})
 
@@ -1212,6 +1236,7 @@ class OrderingAgent:
                 max_tokens=4000,
                 system=_SYNTHESIS_SYSTEM,
                 messages=messages,
+                _label=f"ToT synthesis: merging {len(branches)} branches into final recommendation {'(with long-term memory)' if past_feedback else '(no prior history)'}",
             )
             messages.append({"role": "assistant", "content": response.content})
 
